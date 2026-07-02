@@ -1,68 +1,63 @@
 import React from 'react';
 
-export default function ProductCard({ producto, alSeleccionar }) {
+export default function ProductCard({ producto, alSeleccionar, onEditarStock }) {
+  const token = localStorage.getItem('token'); // Detectar si hay sesión administrativa activa
+  
   const variantePrincipal = producto.variantes_color?.[0];
-  const imagenPrincipal = variantePrincipal?.imagenes?.find(img => img.es_principal)?.url_imagen 
-    || variantePrincipal?.imagenes?.[0]?.url_imagen 
-    || "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=600";
+  const imagenUrl = variantePrincipal?.imagenes?.find(img => img.es_principal)?.url_imagen 
+    || variantePrincipal?.imagenes?.[0]?.url_imagen;
 
   return (
-    <div 
-      onClick={() => alSeleccionar(producto)}
-      className="bg-white rounded-2xl shadow-sm border border-neutral-100 overflow-hidden hover:shadow-md hover:border-neutral-300 transition-all duration-300 flex flex-col h-full cursor-pointer group"
-    >
-      {/* Contenedor de Imagen */}
-      <div className="relative aspect-square bg-neutral-50 flex items-center justify-center p-6">
-        <img 
-          src={imagenPrincipal} 
-          alt={producto.nombre} 
-          className="max-h-full max-w-full object-contain transform group-hover:scale-105 transition-transform duration-300"
-        />
-        {producto.porcentaje_descuento > 0 && (
-          <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
-            -{producto.porcentaje_descuento}%
-          </span>
-        )}
-      </div>
-
-      {/* Información Técnica */}
-      <div className="p-4 flex flex-col grow">
-        <span className="text-xs uppercase font-semibold text-neutral-400 tracking-wider">
-          {producto.marca?.nombre} • {producto.categoria?.nombre}
+    <div className="bg-white rounded-2xl border border-neutral-200/80 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between relative group">
+      
+      {/* Etiqueta de Descuento */}
+      {producto.porcentaje_descuento > 0 && (
+        <span className="absolute top-3 left-3 bg-red-500 text-white font-black text-[10px] uppercase px-2 py-0.5 rounded-md tracking-wider z-10 animate-pulse">
+          - {producto.porcentaje_descuento} %
         </span>
-        <h3 className="text-base font-bold text-neutral-900 mt-1 line-clamp-1 group-hover:text-neutral-700">
-          {producto.nombre}
-        </h3>
-        
-        <div className="mt-3 flex items-baseline gap-2">
-          <span className="text-xl font-black text-neutral-900">
-            S/. {producto.precio_final}
-          </span>
-          {producto.porcentaje_descuento > 0 && (
-            <span className="text-sm text-neutral-400 line-through">
-              S/. {producto.precio_base}
-            </span>
-          )}
+      )}
+
+      {/* Área Clickable de la Ficha Técnica */}
+      <div onClick={() => alSeleccionar(producto)} className="cursor-pointer grow">
+        <div className="aspect-square bg-neutral-50 p-6 flex items-center justify-center overflow-hidden">
+          <img 
+            src={imagenUrl || "https://images.unsplash.com/photo-1600185365483-26d7a4cc7519?q=80&w=500"} 
+            alt={producto.nombre} 
+            className="max-h-40 object-contain group-hover:scale-105 transition-transform duration-300"
+          />
         </div>
 
-        <div className="border-t border-neutral-100 my-3"></div>
-
-        {/* Tallas */}
-        <div className="flex flex-wrap gap-1 mt-auto">
-          {variantePrincipal?.tallares_stock?.map((item) => (
-            <span 
-              key={item.id} 
-              className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                item.stock > 0 
-                  ? 'border-neutral-200 text-neutral-700 bg-neutral-50' 
-                  : 'border-neutral-100 text-neutral-300 bg-neutral-100/50 line-through'
-              }`}
-            >
-              {item.talla}
-            </span>
-          ))}
+        <div className="p-4 space-y-1">
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+            {producto.marca?.nombre || "Calzado"}
+          </span>
+          <h3 className="text-sm font-black text-neutral-900 tracking-tight uppercase line-clamp-1">
+            {producto.nombre}
+          </h3>
+          <div className="flex items-baseline gap-2 pt-1">
+            <span className="text-base font-black text-neutral-900">S/. {producto.precio_final}</span>
+            {producto.porcentaje_descuento > 0 && (
+              <span className="text-xs text-neutral-400 line-through">S/. {producto.precio_base}</span>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* 🛠️ CONTROLES EXCLUSIVOS DE ADMINISTRADOR */}
+      {token && onEditarStock && (
+        <div className="p-3 bg-neutral-50 border-t border-neutral-100 flex gap-2">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation(); // Evita abrir el modal de cliente por accidente
+              onEditarStock(producto);
+            }}
+            className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-[11px] py-2 rounded-xl uppercase tracking-wider transition-colors cursor-pointer text-center"
+          >
+            ✏️ Editar Stock
+          </button>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import API from './api';
 import ProductCard from './components/ProductCard';
-import Login from './components/Login'; // 🔐 Importación de tu nuevo componente de seguridad
+import Login from './components/Login'; // 🔐 Importación de seguridad
 import FormularioProducto from './components/FormularioProducto';
+import ModalEditarStock from './components/ModalEditarStock'; // 🔄 Importación del módulo de reabastecimiento
 
 export default function App() {
   // =============================================================================
-  // 🛡️ ESTADOS DE AUTENTICACIÓN Y CONTROL DE ACCESO (HU-04)
+  // 🛡️ ESTADOS DE AUTENTICACIÓN Y CONTROL DE ACCESO BLINDADO
   // =============================================================================
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [mostrarLogin, setMostrarLogin] = useState(false);
   const [modalFormularioAbierto, setModalFormularioAbierto] = useState(false);
+  const [validandoSesion, setValidandoSesion] = useState(true); // Escudo protector contra parpadeos en F5
+  const [productoParaStock, setProductoParaStock] = useState(null); // Controla qué calzado se va a reabastecer
 
-  // Estados base del catálogo
+  // Estados base del catálogo público
   const [productos, setProductos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
@@ -32,12 +35,48 @@ export default function App() {
   });
   const [menuCarritoAbierto, setMenuCarritoAbierto] = useState(false);
 
-  // Guardar automáticamente el carrito en localStorage
+  // Guardar automáticamente el carrito en localStorage ante cambios
   useEffect(() => {
     localStorage.setItem('sneakerhub_cart', JSON.stringify(carrito));
   }, [carrito]);
 
-  // Consumo de API del Catálogo con Filtros
+  // =============================================================================
+  // 🛡️ EFFECT 1: VALIDACIÓN PERIMETRAL DE TOKEN EN F5
+  // =============================================================================
+  useEffect(() => {
+    const tokenGuardado = localStorage.getItem('token');
+    
+    if (!tokenGuardado) {
+      setToken(null);
+      setValidandoSesion(false);
+      return;
+    }
+
+    // Verificación silenciosa con el backend para certificar que el token no ha expirado
+    API.get('/productos/buscar', {
+      headers: { Authorization: `Bearer ${tokenGuardado}` }
+    })
+      .then(() => {
+        setToken(tokenGuardado); // Sigue vigente
+      })
+      .catch((err) => {
+        // Si el servidor rechaza el token (Sesión expirada), limpiamos de inmediato
+        if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+          console.warn("La sesión expiró o el token es inválido. Limpiando almacenamiento.");
+          localStorage.removeItem('token');
+          localStorage.removeItem('role');
+          localStorage.removeItem('userEmail');
+          setToken(null);
+        }
+      })
+      .finally(() => {
+        setValidandoSesion(false); // Libera la interfaz
+      });
+  }, []);
+
+  // =============================================================================
+  // 🛰️ EFFECT 2: CONSUMO DE API DEL CATÁLOGO CON FILTROS CONCURRENTES
+  // =============================================================================
   useEffect(() => {
     setCargando(true);
     const params = {};
@@ -64,7 +103,7 @@ export default function App() {
     setToken(null);
   };
 
-  // Funciones del Carrito
+  // Funciones del Carrito de Compras
   const agregarAlCarrito = () => {
     if (!tallaSeleccionada) {
       alert("Por favor, selecciona una talla antes de añadir el producto.");
@@ -119,7 +158,7 @@ export default function App() {
   const totalCompra = carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
 
   // =============================================================================
-  // 🔌 CONECTOR MOTOR DE WHATSAPP (HU-03 - CIERRE SPRINT 3)
+  // 🔌 CONECTOR MOTOR DE WHATSAPP (HU-03)
   // =============================================================================
   const enviarPedidoWhatsApp = () => {
     if (carrito.length === 0) return;
@@ -146,8 +185,22 @@ export default function App() {
   };
 
   // =============================================================================
-  // INTERRUPTOR VISTA DE LOGIN (VÍA FLUJO CONDICIONAL)
+  // RENDERS CONDICIONALES PERIMETRALES
   // =============================================================================
+  
+  // 1. Loader de arranque para evitar el parpadeo de interfaces en F5
+  if (validandoSesion) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center font-sans">
+        <div className="text-center space-y-2">
+          <div className="h-6 w-6 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Verificando Credenciales...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Interruptor Vista del Componente de Login
   if (mostrarLogin) {
     return (
       <div className="relative">
@@ -165,6 +218,9 @@ export default function App() {
     );
   }
 
+  // =============================================================================
+  // INTERFAZ DE USUARIO PRINCIPAL (CATÁLOGO GENERAL Y CONTROLES)
+  // =============================================================================
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans antialiased">
       
@@ -226,7 +282,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* PANEL DE FILTROS */}
+      {/* PANEL DE FILTROS EN PARALELO */}
       <section className="bg-white border-b border-neutral-200 px-4 py-6">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
@@ -270,7 +326,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* FEED DE PRODUCTOS */}
+      {/* FEED DE PRODUCTOS PRINCIPAL */}
       <main className="max-w-7xl mx-auto px-4 py-8">
         {error && <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-center text-red-600 mb-6">{error}</div>}
 
@@ -289,13 +345,14 @@ export default function App() {
                 key={producto.id} 
                 producto={producto} 
                 alSeleccionar={(p) => { setProductoSeleccionado(p); setTallaSeleccionada(''); }} 
+                onEditarStock={(p) => setProductoParaStock(p)} // 👈 Inyecta la acción de reabastecimiento
               />
             ))}
           </div>
         )}
       </main>
 
-      {/* MODAL FICHA TÉCNICA */}
+      {/* MODAL FICHA TÉCNICA DEL CLIENTE */}
       {productoSeleccionado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl relative flex flex-col md:flex-row">
@@ -375,7 +432,7 @@ export default function App() {
         </div>
       )}
 
-      {/* DRAWER LATERAL: CARRITO */}
+      {/* DRAWER LATERAL: RESUMEN DEL CARRITO */}
       {menuCarritoAbierto && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-end">
           <div className="absolute inset-0" onClick={() => setMenuCarritoAbierto(false)}></div>
@@ -445,12 +502,24 @@ export default function App() {
         </div>
       )}
 
-      {/* 👟 MODAL DEL FORMULARIO ADMINISTRATIVO (CONEXIÓN ADICIONADA) */}
+      {/* MODAL DEL FORMULARIO ADMINISTRATIVO (REGISTRO NUEVO) */}
       {modalFormularioAbierto && (
         <FormularioProducto 
           alCerrar={() => setModalFormularioAbierto(false)}
           onProductoRegistrado={() => {
-            // Refrescar catálogo automáticamente de forma limpia
+            setBusqueda(prev => prev + ' ');
+            setTimeout(() => setBusqueda(prev => prev.trim()), 50);
+          }}
+        />
+      )}
+
+      {/* MODAL DE EDICIÓN DE STOCK EN LOTE (MÚLTIPLES TALLAS) */}
+      {productoParaStock && (
+        <ModalEditarStock 
+          producto={productoParaStock}
+          alCerrar={() => setProductoParaStock(null)}
+          onStockActualizado={() => {
+            // Sincroniza y refresca la vista del feed de inmediato
             setBusqueda(prev => prev + ' ');
             setTimeout(() => setBusqueda(prev => prev.trim()), 50);
           }}

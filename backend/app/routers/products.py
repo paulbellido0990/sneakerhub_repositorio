@@ -179,3 +179,63 @@ def registrar_variante_producto(
             status_code=500,
             detail=f"Fallo en cascada relacional: {str(e)}"
         )
+
+# =============================================================================
+# ESQUEMA PARA ACTUALIZACIÓN DE STOCK
+# =============================================================================
+class TallaStockUpdate(BaseModel):
+    talla: str
+    stock: int
+
+# =============================================================================
+# 🔐 ENDPOINT: ACTUALIZAR INVENTARIO DE UN PRODUCTO EXISTENTE
+# =============================================================================
+@router.put("/{producto_id}/stock", summary="Actualizar Inventario por Tallas")
+def actualizar_stock_producto(
+    producto_id: int,
+    payload: List[TallaStockUpdate],
+    db: Session = Depends(get_db)
+):
+    """
+    Modifica el stock existente o añade nuevas tallas a la primera variante 
+    activa del calzado especificado en MySQL.
+    """
+    from app.models.product import VarianteColor, TallaStock
+
+    # 1. Ubicar la variante operativa del calzado
+    variante = db.query(VarianteColor).filter(VarianteColor.producto_id == producto_id).first()
+    if not variante:
+        raise HTTPException(
+            status_code=404, 
+            detail="Este calzado no cuenta con una variante de inventario inicializada."
+        )
+
+    try:
+        # 2. Iterar la matriz enviada desde React
+        for item in payload:
+            registro_talla = db.query(TallaStock).filter(
+                TallaStock.variante_color_id == variante.id,
+                TallaStock.talla == item.talla
+            ).first()
+
+            if registro_talla:
+                # Si la talla ya existe, se sobrescribe su stock
+                registro_talla.stock = item.stock
+            else:
+                # Si es una talla nueva que no estaba en el lote original, se crea
+                nuevo_stock = TallaStock(
+                    variante_color_id=variante.id,
+                    talla=item.talla,
+                    stock=item.stock
+                )
+                db.add(nuevo_stock)
+
+        db.commit()
+        return {"status": "Éxito", "mensaje": "Inventario actualizado correctamente en MySQL."}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Fallo en la actualización de inventario: {str(e)}"
+        )
