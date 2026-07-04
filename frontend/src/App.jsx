@@ -1,85 +1,67 @@
 import React, { useState, useEffect } from 'react';
 import API from './api';
 import ProductCard from './components/ProductCard';
-import Login from './components/Login'; // 🔐 Importación de seguridad
+import Login from './components/Login'; 
 import FormularioProducto from './components/FormularioProducto';
-import ModalEditarStock from './components/ModalEditarStock'; // 🔄 Importación del módulo de reabastecimiento
+import ModalEditarStock from './components/ModalEditarStock'; 
 
 export default function App() {
-  // =============================================================================
-  // 🛡️ ESTADOS DE AUTENTICACIÓN Y CONTROL DE ACCESO BLINDADO
-  // =============================================================================
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [mostrarLogin, setMostrarLogin] = useState(false);
   const [modalFormularioAbierto, setModalFormularioAbierto] = useState(false);
-  const [validandoSesion, setValidandoSesion] = useState(true); // Escudo protector contra parpadeos en F5
-  const [productoParaStock, setProductoParaStock] = useState(null); // Controla qué calzado se va a reabastecer
+  const [validandoSesion, setValidandoSesion] = useState(true); 
+  const [productoParaStock, setProductoParaStock] = useState(null); 
 
-  // Estados base del catálogo público
+  // Controladores de Catálogo y Filtros
   const [productos, setProductos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
-
-  // Estados para los filtros concurrentes (HU-02)
   const [busqueda, setBusqueda] = useState('');
   const [tallaFiltro, setTallaFiltro] = useState('');
+  const [verOcultos, setVerOcultos] = useState(false); 
 
-  // Estado para la Ficha Técnica Modal (HU-01)
+  // 🌟 NUEVOS ESTADOS: Control del historial de transacciones relacionales
+  const [modalPedidosAbierto, setModalPedidosAbierto] = useState(false);
+  const [pedidos, setPedidos] = useState([]);
+  const [cargandoPedidos, setCargandoPedidos] = useState(false);
+
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
 
-  // Estados del Carrito con Persistencia Local
   const [carrito, setCarrito] = useState(() => {
     const datosLocales = localStorage.getItem('sneakerhub_cart');
     return datosLocales ? JSON.parse(datosLocales) : [];
   });
   const [menuCarritoAbierto, setMenuCarritoAbierto] = useState(false);
 
-  // Guardar automáticamente el carrito en localStorage ante cambios
   useEffect(() => {
     localStorage.setItem('sneakerhub_cart', JSON.stringify(carrito));
   }, [carrito]);
 
-  // =============================================================================
-  // 🛡️ EFFECT 1: VALIDACIÓN PERIMETRAL DE TOKEN EN F5
-  // =============================================================================
+  const totalCompra = carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+
+  // EFFECT 1: Validación de Credenciales
   useEffect(() => {
     const tokenGuardado = localStorage.getItem('token');
-    
     if (!tokenGuardado) {
       setToken(null);
       setValidandoSesion(false);
       return;
     }
-
-    // Verificación silenciosa con el backend para certificar que el token no ha expirado
-    API.get('/productos/buscar', {
-      headers: { Authorization: `Bearer ${tokenGuardado}` }
-    })
-      .then(() => {
-        setToken(tokenGuardado); // Sigue vigente
+    API.get('/productos/buscar', { headers: { Authorization: `Bearer ${tokenGuardado}` } })
+      .then(() => setToken(tokenGuardado))
+      .catch(() => {
+        localStorage.removeItem('token');
+        setToken(null);
       })
-      .catch((err) => {
-        // Si el servidor rechaza el token (Sesión expirada), limpiamos de inmediato
-        if (err.response && (err.response.status === 401 || err.response.status === 403)) {
-          console.warn("La sesión expiró o el token es inválido. Limpiando almacenamiento.");
-          localStorage.removeItem('token');
-          localStorage.removeItem('role');
-          localStorage.removeItem('userEmail');
-          setToken(null);
-        }
-      })
-      .finally(() => {
-        setValidandoSesion(false); // Libera la interfaz
-      });
+      .finally(() => setValidandoSesion(false));
   }, []);
 
-  // =============================================================================
-  // 🛰️ EFFECT 2: CONSUMO DE API DEL CATÁLOGO CON FILTROS CONCURRENTES
-  // =============================================================================
+  // EFFECT 2: Carga del Feed Público
   useEffect(() => {
     setCargando(true);
-    const params = {};
+    setError(null);
+    const params = { estado: verOcultos ? 'INACTIVO' : 'ACTIVO' };
     if (busqueda) params.q = busqueda;
     if (tallaFiltro) params.talla = tallaFiltro;
 
@@ -89,239 +71,168 @@ export default function App() {
         setCargando(false);
       })
       .catch((err) => {
-        console.error("Error al filtrar catálogo:", err);
+        console.error(err);
         setError("Error de comunicación con el motor relacional.");
         setCargando(false);
       });
-  }, [busqueda, tallaFiltro]);
+  }, [busqueda, tallaFiltro, verOcultos]);
 
-  // Handler para cierre de sesión seguro
+  // 🌟 EFECTO 3: Carga bajo demanda del historial de ventas al abrir el panel
+  useEffect(() => {
+    if (modalPedidosAbierto) {
+      setCargandoPedidos(true);
+      const tokenGuardado = localStorage.getItem('token');
+      API.get('/pedidos/', { headers: { Authorization: `Bearer ${tokenGuardado}` } })
+        .then((res) => {
+          setPedidos(res.data);
+          setCargandoPedidos(false);
+        })
+        .catch((err) => {
+          console.error("Fallo al obtener pedidos:", err);
+          setCargandoPedidos(false);
+        });
+    }
+  }, [modalPedidosAbierto]);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
-    localStorage.removeItem('role');
-    localStorage.removeItem('userEmail');
     setToken(null);
+    setModalPedidosAbierto(false);
   };
 
-  // Funciones del Carrito de Compras
+  const handleOcultarProducto = async (id) => {
+    const tokenGuardado = localStorage.getItem('token');
+    try {
+      await API.delete(`/productos/${id}`, { headers: { 'Authorization': `Bearer ${tokenGuardado}` } });
+      setProductos((prev) => prev.filter(p => p.id !== id));
+      setProductoSeleccionado(null);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  const handleActivarProducto = async (id) => {
+    const tokenGuardado = localStorage.getItem('token');
+    try {
+      await API.post(`/productos/${id}/activar`, {}, { headers: { 'Authorization': `Bearer ${tokenGuardado}` } });
+      setProductos((prev) => prev.filter(p => p.id !== id));
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
   const agregarAlCarrito = () => {
-    if (!tallaSeleccionada) {
-      alert("Por favor, selecciona una talla antes de añadir el producto.");
-      return;
-    }
+    if (!tallaSeleccionada) { alert("Selecciona una talla"); return; }
+    const variante = productoSeleccionado.variantes_color?.[0];
+    const img = variante?.imagenes?.find(i => i.es_principal)?.url_imagen || variante?.imagenes?.[0]?.url_imagen;
+    const existente = carrito.find(i => i.id === productoSeleccionado.id && i.talla === tallaSeleccionada);
 
-    const variantePrincipal = productoSeleccionado.variantes_color?.[0];
-    const imagenUrl = variantePrincipal?.imagenes?.find(img => img.es_principal)?.url_imagen 
-      || variantePrincipal?.imagenes?.[0]?.url_imagen;
-
-    const itemExistente = carrito.find(
-      item => item.id === productoSeleccionado.id && item.talla === tallaSeleccionada
-    );
-
-    if (itemExistente) {
-      setCarrito(carrito.map(item => 
-        (item.id === productoSeleccionado.id && item.talla === tallaSeleccionada)
-          ? { ...item, cantidad: item.cantidad + 1 }
-          : item
-      ));
+    if (existente) {
+      setCarrito(carrito.map(i => (i.id === productoSeleccionado.id && i.talla === tallaSeleccionada) ? { ...i, cantidad: i.cantidad + 1 } : i));
     } else {
-      setCarrito([...carrito, {
-        id: productoSeleccionado.id,
-        nombre: productoSeleccionado.nombre,
-        marca: productoSeleccionado.marca?.nombre,
-        precio: parseFloat(productoSeleccionado.precio_final),
-        talla: tallaSeleccionada,
-        imagen: imagenUrl,
-        cantidad: 1
-      }]);
+      setCarrito([...carrito, { id: productoSeleccionado.id, nombre: productoSeleccionado.nombre, marca: productoSeleccionado.marca?.nombre, precio: parseFloat(productoSeleccionado.precio_final), talla: tallaSeleccionada, imagen: img, cantidad: 1 }]);
     }
-
-    setTallaSeleccionada('');
-    setProductoSeleccionado(null);
-    setMenuCarritoAbierto(true);
+    setTallaSeleccionada(''); setProductoSeleccionado(null); setMenuCarritoAbierto(true);
   };
 
   const modificarCantidad = (id, talla, factor) => {
-    setCarrito(carrito.map(item => {
-      if (item.id === id && item.talla === talla) {
-        const nuevaCantidad = item.cantidad + factor;
-        return nuevaCantidad > 0 ? { ...item, cantidad: nuevaCantidad } : item;
-      }
-      return item;
-    }).filter(item => item.cantidad > 0));
+    setCarrito(carrito.map(i => (i.id === id && i.talla === talla) ? { ...i, cantidad: i.cantidad + factor } : i).filter(i => i.cantidad > 0));
   };
 
-  const eliminarDelCarrito = (id, talla) => {
-    setCarrito(carrito.filter(item => !(item.id === id && item.talla === talla)));
-  };
-
-  const totalCompra = carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
-
-  // =============================================================================
-  // 🔌 CONECTOR MOTOR DE WHATSAPP (HU-03)
-  // =============================================================================
-  const enviarPedidoWhatsApp = () => {
+  const enviarPedidoWhatsApp = async () => {
     if (carrito.length === 0) return;
+    try {
+      const pedidoPayload = {
+        nombre_cliente: "Cliente Web SneakerHub",
+        detalles: carrito.map(item => ({
+          producto_id: item.id,
+          talla: item.talla,
+          cantidad: item.cantidad,
+          precio_unitario: item.precio
+        }))
+      };
 
-    const CELULAR_TIENDA = "51999999999"; 
+      await API.post('/pedidos/', pedidoPayload);
 
-    let mensaje = `🚨 *¡Hola SneakerHub Ayacucho!* \n`;
-    mensaje += `Quiero realizar un pedido con el siguiente detalle:\n\n`;
-    mensaje += `-------------------------------------------\n`;
+      const CELULAR_TIENDA = "51999999999"; 
+      let mensaje = `🚨 *¡Hola SneakerHub Ayacucho!* \n`;
+      mensaje += `Quiero realizar un pedido con el siguiente detalle:\n\n`;
+      carrito.forEach((item) => {
+        mensaje += `👟 *${item.nombre}* \n📏 *Talla:* ${item.talla} | *Cant:* ${item.cantidad}\n💵 *Subtotal:* S/. ${(item.precio * item.cantidad).toFixed(2)}\n-------------------------------------------\n`;
+      });
+      mensaje += `💰 *TOTAL A PAGAR: S/. ${totalCompra.toFixed(2)}*\n\nMi pedido ya quedó registrado en el sistema. ¿Coordinamos?`;
 
-    carrito.forEach((item) => {
-      mensaje += `👟 *${item.nombre}* (${item.marca})\n`;
-      mensaje += `📏 *Talla:* ${item.talla} | *Cant:* ${item.cantidad}\n`;
-      mensaje += `💵 *Subtotal:* S/. ${(item.precio * item.cantidad).toFixed(2)}\n`;
-      mensaje += `-------------------------------------------\n`;
-    });
-
-    mensaje += `💰 *TOTAL A PAGAR: S/. ${totalCompra.toFixed(2)}*\n\n`;
-    mensaje += `¿Tienen disponibilidad de stock para coordinar la entrega de mis zapatillas? 🙌`;
-
-    const mensajeCodificado = encodeURIComponent(mensaje);
-    const urlWhatsApp = `https://wa.me/${CELULAR_TIENDA}?text=${mensajeCodificado}`;
-    window.open(urlWhatsApp, '_blank');
+      setCarrito([]);
+      setMenuCarritoAbierto(false);
+      window.open(`https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`, '_blank');
+    } catch (err) {
+      alert(`Error en el motor de inventario: ${err.response?.data?.detail || "No se pudo registrar."}`);
+    }
   };
 
-  // =============================================================================
-  // RENDERS CONDICIONALES PERIMETRALES
-  // =============================================================================
-  
-  // 1. Loader de arranque para evitar el parpadeo de interfaces en F5
-  if (validandoSesion) {
-    return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center font-sans">
-        <div className="text-center space-y-2">
-          <div className="h-6 w-6 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Verificando Credenciales...</p>
-        </div>
-      </div>
-    );
-  }
+  if (validandoSesion) return <div className="min-h-screen bg-neutral-50 flex items-center justify-center font-sans"><p className="text-xs font-black tracking-widest text-neutral-400 animate-pulse">Verificando Credenciales...</p></div>;
+  if (mostrarLogin) return <div className="relative"><button onClick={() => setMostrarLogin(false)} className="absolute top-4 left-4 bg-white/10 text-white font-bold text-xs px-4 py-2 rounded-xl border border-gray-700 z-50 cursor-pointer">← Volver</button><Login onLoginSuccess={(t) => { setToken(t); setMostrarLogin(false); }} /></div>;
 
-  // 2. Interruptor Vista del Componente de Login
-  if (mostrarLogin) {
-    return (
-      <div className="relative">
-        <button 
-          onClick={() => setMostrarLogin(false)}
-          className="absolute top-4 left-4 bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all cursor-pointer border border-gray-700 z-50"
-        >
-          ← Volver al Catálogo
-        </button>
-        <Login onLoginSuccess={(tokenGenerado) => {
-          setToken(tokenGenerado);
-          setMostrarLogin(false);
-        }} />
-      </div>
-    );
-  }
-
-  // =============================================================================
-  // INTERFAZ DE USUARIO PRINCIPAL (CATÁLOGO GENERAL Y CONTROLES)
-  // =============================================================================
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans antialiased">
       
       {/* BARRA SUPERIOR DE ADMINISTRADOR GLOBAL */}
       {token && (
-        <div className="bg-emerald-600 text-white text-xs font-bold py-2 px-4 flex justify-between items-center animate-in fade-in duration-300">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-2 w-2 rounded-full bg-emerald-300 animate-pulse"></span>
-              <span>🛡️ Sesión de Administrador Activa (Paul)</span>
-            </div>
+        <div className="bg-emerald-600 text-white text-xs font-bold py-2 px-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-300 animate-pulse"></span>
+            <span>🛡️ Panel Administrativo (Paul)</span>
+            <button onClick={() => setModalFormularioAbierto(true)} className="bg-white text-emerald-800 px-3 py-1 rounded-lg text-[11px] font-black hover:bg-neutral-100 cursor-pointer uppercase">+ Añadir Zapatilla</button>
+            
+            <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-neutral-950 text-white'}`}>
+              {verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}
+            </button>
+
+            {/* 🌟 NUEVO BOTÓN: Abre el módulo auditor de pedidos en MySQL */}
             <button 
-              onClick={() => setModalFormularioAbierto(true)}
-              className="bg-white text-emerald-800 px-3 py-1 rounded-lg text-[11px] uppercase tracking-wider font-black hover:bg-neutral-100 transition-all cursor-pointer"
+              onClick={() => setModalPedidosAbierto(true)} 
+              className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer"
             >
-              + Añadir Zapatilla
+              📋 Historial de Pedidos
             </button>
           </div>
-          <button 
-            onClick={handleLogout}
-            className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg text-[11px] uppercase tracking-wider transition-all font-black cursor-pointer"
-          >
-            Cerrar Sesión
-          </button>
+          <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg text-[11px] font-black cursor-pointer uppercase">Cerrar Sesión</button>
         </div>
       )}
 
       {/* HEADER */}
       <header className="bg-white border-b border-neutral-200 sticky top-0 z-40 px-4 py-4 shadow-2xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <h1 className="text-xl font-black tracking-tight uppercase">
-            SneakerHub <span className="text-neutral-400 font-normal text-sm">Ayacucho</span>
-          </h1>
-          
+          <h1 className="text-xl font-black tracking-tight uppercase">SneakerHub <span className="text-neutral-400 font-normal text-sm">Ayacucho</span></h1>
           <div className="flex items-center gap-3">
             {!token ? (
-              <button 
-                onClick={() => setMostrarLogin(true)}
-                className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 hover:text-neutral-900 transition-all cursor-pointer flex items-center gap-1.5"
-              >
-                Anclaje Admin 🔐
-              </button>
+              <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer">Anclaje Admin 🔐</button>
             ) : (
-              <span className="bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl border border-emerald-200">
-                ⚡ Panel Activo
-              </span>
+              <span className="bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl border border-emerald-200">Panel Activo</span>
             )}
-
-            <button 
-              onClick={() => setMenuCarritoAbierto(true)}
-              className="bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-xl hover:bg-neutral-800 transition-all flex items-center gap-2 cursor-pointer relative"
-            >
-              🛒 Mi Carrito
-              <span className="bg-red-500 text-white text-[10px] h-5 w-5 rounded-full flex items-center justify-center font-black">
-                {carrito.reduce((sum, item) => sum + item.cantidad, 0)}
-              </span>
+            <button onClick={() => setMenuCarritoAbierto(true)} className="bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer">
+              🛒 Mi Carrito <span className="bg-red-500 text-white text-[10px] h-5 w-5 rounded-full flex items-center justify-center font-black">{carrito.reduce((s, i) => s + i.cantidad, 0)}</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* PANEL DE FILTROS EN PARALELO */}
+      {/* FILTROS */}
       <section className="bg-white border-b border-neutral-200 px-4 py-6">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">¿Qué zapatillas buscas?</label>
-            <input 
-              type="text"
-              placeholder="Ej. Jordan, Nike, Ultraboost..."
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-neutral-900 focus:bg-white transition-all"
-            />
+            <input type="text" placeholder="Ej. Jordan..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-neutral-900 focus:bg-white transition-all"/>
           </div>
-
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">Filtrar por tu Talla</label>
-            <select 
-              value={tallaFiltro}
-              onChange={(e) => setTallaFiltro(e.target.value)}
-              className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-neutral-900 focus:bg-white transition-all cursor-pointer"
-            >
+            <select value={tallaFiltro} onChange={(e) => setTallaFiltro(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none cursor-pointer">
               <option value="">Todas las tallas disponibles</option>
-              <option value="38">Talla 38</option>
-              <option value="39">Talla 39</option>
-              <option value="40">Talla 40</option>
-              <option value="41">Talla 41</option>
-              <option value="42">Talla 42</option>
-              <option value="43">Talla 43</option>
+              {["38", "39", "40", "41", "42", "43"].map(t => <option key={t} value={t}>Talla {t}</option>)}
             </select>
           </div>
-
           <div className="flex items-end">
-            {(busqueda || tallaFiltro) && (
-              <button 
-                onClick={() => { setBusqueda(''); setTallaFiltro(''); }}
-                className="w-full md:w-auto text-xs font-bold uppercase bg-neutral-100 hover:bg-neutral-200 text-neutral-700 px-5 py-3 rounded-xl transition-colors cursor-pointer"
-              >
-                Limpiar Filtros
-              </button>
-            )}
+            {(busqueda || tallaFiltro) && <button onClick={() => { setBusqueda(''); setTallaFiltro(''); }} className="w-full md:w-auto text-xs font-bold uppercase bg-neutral-100 text-neutral-700 px-5 py-3 rounded-xl cursor-pointer">Limpiar</button>}
           </div>
         </div>
       </section>
@@ -329,24 +240,16 @@ export default function App() {
       {/* FEED DE PRODUCTOS PRINCIPAL */}
       <main className="max-w-7xl mx-auto px-4 py-8">
         {error && <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-center text-red-600 mb-6">{error}</div>}
-
         {cargando ? (
-          <div className="flex items-center justify-center py-20">
-            <p className="text-neutral-400 font-medium animate-pulse">Sincronizando con el servidor...</p>
-          </div>
+          <div className="flex items-center justify-center py-20"><p className="text-neutral-400 font-medium animate-pulse">Sincronizando con el servidor...</p></div>
         ) : productos.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-2xl border border-neutral-100 p-8">
-            <p className="text-neutral-500 font-bold text-lg">No encontramos zapatillas con esos filtros</p>
+          <div className="text-center py-20 bg-white rounded-2xl border p-8">
+            <p className="text-neutral-500 font-bold text-lg">{verOcultos ? "No hay archivados" : "No encontramos zapatillas"}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {productos.map((producto) => (
-              <ProductCard 
-                key={producto.id} 
-                producto={producto} 
-                alSeleccionar={(p) => { setProductoSeleccionado(p); setTallaSeleccionada(''); }} 
-                onEditarStock={(p) => setProductoParaStock(p)} // 👈 Inyecta la acción de reabastecimiento
-              />
+              <ProductCard key={producto.id} producto={producto} alSeleccionar={(p) => { setProductoSeleccionado(p); setTallaSeleccionada(''); }} onEditarStock={(p) => setProductoParaStock(p)} onOcultarProducto={handleOcultarProducto} onActivarProducto={handleActivarProducto} />
             ))}
           </div>
         )}
@@ -356,77 +259,26 @@ export default function App() {
       {productoSeleccionado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl relative flex flex-col md:flex-row">
-            <button 
-              onClick={() => setProductoSeleccionado(null)}
-              className="absolute top-4 right-4 z-10 bg-white/80 hover:bg-white text-neutral-900 border border-neutral-200 h-8 w-8 rounded-full flex items-center justify-center font-bold shadow-sm cursor-pointer"
-            >
-              ✕
-            </button>
-
-            <div className="md:w-1/2 bg-neutral-50 p-8 flex items-center justify-center aspect-square md:aspect-auto">
-              <img 
-                src={
-                  productoSeleccionado.variantes_color?.[0]?.imagenes?.find(img => img.es_principal)?.url_imagen 
-                  || productoSeleccionado.variantes_color?.[0]?.imagenes?.[0]?.url_imagen
-                } 
-                alt={productoSeleccionado.nombre} 
-                className="max-h-64 md:max-h-full max-w-full object-contain"
-              />
-            </div>
-
+            <button onClick={() => setProductoSeleccionado(null)} className="absolute top-4 right-4 z-10 bg-white/80 border h-8 w-8 rounded-full flex items-center justify-center font-bold cursor-pointer">✕</button>
+            <div className="md:w-1/2 bg-neutral-50 p-8 flex items-center justify-center"><img src={productoSeleccionado.variantes_color?.[0]?.imagenes?.find(img => img.es_principal)?.url_imagen || productoSeleccionado.variantes_color?.[0]?.imagenes?.[0]?.url_imagen} alt={productoSeleccionado.nombre} className="max-h-64 md:max-h-full max-w-full object-contain" /></div>
             <div className="md:w-1/2 p-6 flex flex-col justify-between">
               <div>
-                <span className="text-xs uppercase font-bold text-neutral-400 tracking-widest">
-                  {productoSeleccionado.marca?.nombre} • {productoSeleccionado.categoria?.nombre}
-                </span>
-                <h2 className="text-xl font-black text-neutral-900 mt-1">
-                  {productoSeleccionado.nombre}
-                </h2>
-                
+                <span className="text-xs uppercase font-bold text-neutral-400 tracking-widest">{productoSeleccionado.marca?.nombre} • {productoSeleccionado.categoria?.nombre}</span>
+                <h2 className="text-xl font-black text-neutral-900 mt-1">{productoSeleccionado.nombre}</h2>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-2xl font-black text-neutral-900">S/. {productoSeleccionado.precio_final}</span>
-                  {productoSeleccionado.porcentaje_descuento > 0 && (
-                    <span className="text-sm text-neutral-400 line-through">S/. {productoSeleccionado.precio_base}</span>
-                  )}
+                  {productoSeleccionado.porcentaje_descuento > 0 && <span className="text-sm text-neutral-400 line-through">S/. {productoSeleccionado.precio_base}</span>}
                 </div>
-
-                <p className="text-xs text-neutral-500 mt-4 leading-relaxed">
-                  {productoSeleccionado.descripcion || "Sin descripción técnica disponible por el momento."}
-                </p>
-
+                <p className="text-xs text-neutral-500 mt-4 leading-relaxed">{productoSeleccionado.descripcion || "Sin descripción técnica."}</p>
                 <div className="border-t border-neutral-100 my-4"></div>
-
-                <h4 className="text-xs font-bold uppercase text-neutral-400 tracking-wider mb-3">
-                  Selecciona tu talla:
-                </h4>
+                <h4 className="text-xs font-bold text-neutral-400 mb-3">Tallas:</h4>
                 <div className="flex flex-wrap gap-2">
                   {productoSeleccionado.variantes_color?.[0]?.tallares_stock?.map((item) => (
-                    <button
-                      key={item.id}
-                      disabled={item.stock === 0}
-                      onClick={() => setTallaSeleccionada(item.talla)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                        item.stock === 0
-                          ? 'border-neutral-100 text-neutral-300 bg-neutral-100 line-through cursor-not-allowed'
-                          : tallaSeleccionada === item.talla
-                            ? 'border-neutral-900 bg-neutral-900 text-white shadow-xs'
-                            : 'border-neutral-200 hover:border-neutral-900 hover:bg-neutral-50 text-neutral-800 cursor-pointer'
-                      }`}
-                    >
-                      {item.talla}
-                    </button>
+                    <button key={item.id} disabled={item.stock === 0} onClick={() => setTallaSeleccionada(item.talla)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${item.stock === 0 ? 'border-neutral-100 text-neutral-300 bg-neutral-100 line-through' : tallaSeleccionada === item.talla ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 text-neutral-800 cursor-pointer'}`}>{item.talla}</button>
                   ))}
                 </div>
               </div>
-
-              <div className="mt-8">
-                <button 
-                  onClick={agregarAlCarrito}
-                  className="w-full bg-neutral-900 text-white font-bold text-sm py-3.5 rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer shadow-xs active:scale-[0.99]"
-                >
-                  Agregar al Carrito
-                </button>
-              </div>
+              <div className="mt-8"><button onClick={agregarAlCarrito} className="w-full bg-neutral-900 text-white font-bold text-sm py-3.5 rounded-xl hover:bg-neutral-800 cursor-pointer">Agregar al Carrito</button></div>
             </div>
           </div>
         </div>
@@ -436,95 +288,101 @@ export default function App() {
       {menuCarritoAbierto && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-end">
           <div className="absolute inset-0" onClick={() => setMenuCarritoAbierto(false)}></div>
-          
-          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between p-6 animate-in slide-in-from-right duration-200">
+          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between p-6 animate-in slide-in-from-right">
             <div>
-              <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4">
-                <h2 className="text-lg font-black uppercase tracking-tight">Mi Pedido</h2>
-                <button 
-                  onClick={() => setMenuCarritoAbierto(false)}
-                  className="text-neutral-400 hover:text-neutral-900 font-bold p-1 cursor-pointer"
-                >
-                  Cerrar ✕
-                </button>
-              </div>
-
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4"><h2 className="text-lg font-black uppercase">Mi Pedido</h2><button onClick={() => setMenuCarritoAbierto(false)} className="text-neutral-400 font-bold p-1 cursor-pointer">Cerrar ✕</button></div>
               <div className="overflow-y-auto max-h-[65vh] space-y-4 pr-1">
-                {carrito.length === 0 ? (
-                  <p className="text-center text-neutral-400 text-sm py-12 font-medium">Tu carrito está vacío. ¡Empieza a añadir tus zapatillas favoritas!</p>
-                ) : (
+                {carrito.length === 0 ? <p className="text-center text-neutral-400 text-sm py-12">Carrito vacío.</p> : (
                   carrito.map((item) => (
-                    <div key={`${item.id}-${item.talla}`} className="flex items-center gap-4 bg-neutral-50 p-3 rounded-2xl border border-neutral-100 relative group">
-                      <img src={item.imagen} alt={item.nombre} className="h-16 w-16 object-contain bg-white rounded-xl p-1 border border-neutral-100" />
+                    <div key={`${item.id}-${item.talla}`} className="flex items-center gap-4 bg-neutral-50 p-3 rounded-2xl border border-neutral-100 relative">
+                      <img src={item.imagen} alt={item.nombre} className="h-16 w-16 object-contain bg-white rounded-xl" />
                       <div className="grow">
                         <span className="text-[10px] font-bold text-neutral-400 uppercase">{item.marca} • Talla {item.talla}</span>
                         <h4 className="text-sm font-bold text-neutral-900 line-clamp-1">{item.nombre}</h4>
                         <p className="text-sm font-black text-neutral-900 mt-1">S/. {(item.precio * item.cantidad).toFixed(2)}</p>
-                        
                         <div className="flex items-center gap-2.5 mt-2">
-                          <button onClick={() => modificarCantidad(item.id, item.talla, -1)} className="h-6 w-6 border border-neutral-200 rounded-md bg-white text-xs font-bold flex items-center justify-center hover:border-neutral-900 cursor-pointer">-</button>
+                          <button onClick={() => modificarCantidad(item.id, item.talla, -1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer">-</button>
                           <span className="text-xs font-bold text-neutral-800 w-4 text-center">{item.cantidad}</span>
-                          <button onClick={() => modificarCantidad(item.id, item.talla, 1)} className="h-6 w-6 border border-neutral-200 rounded-md bg-white text-xs font-bold flex items-center justify-center hover:border-neutral-900 cursor-pointer">+</button>
+                          <button onClick={() => modificarCantidad(item.id, item.talla, 1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer">+</button>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => eliminarDelCarrito(item.id, item.talla)}
-                        className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold p-1 cursor-pointer transition-colors"
-                      >
-                        ✕
-                      </button>
+                      <button onClick={() => setCarrito(carrito.filter(i => !(i.id === item.id && i.talla === item.talla)))} className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold cursor-pointer">✕</button>
                     </div>
                   ))
                 )}
               </div>
             </div>
-
             <div className="border-t border-neutral-100 pt-4 mt-4">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-bold text-neutral-500 uppercase tracking-wider">Total Neto:</span>
-                <span className="text-2xl font-black text-neutral-900">S/. {totalCompra.toFixed(2)}</span>
-              </div>
-              
-              <button 
-                disabled={carrito.length === 0}
-                onClick={enviarPedidoWhatsApp}
-                className={`w-full font-bold text-sm py-3.5 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 uppercase tracking-wider ${
-                  carrito.length === 0
-                    ? 'bg-neutral-100 text-neutral-300 cursor-not-allowed shadow-none'
-                    : 'bg-green-600 hover:bg-green-700 text-white cursor-pointer active:scale-[0.99]'
-                }`}
-              >
-                💬 Confirmar por WhatsApp
-              </button>
+              <div className="flex items-center justify-between mb-4"><span className="text-sm font-bold text-neutral-500 uppercase">Total Neto:</span><span className="text-2xl font-black text-neutral-900">S/. {totalCompra.toFixed(2)}</span></div>
+              <button disabled={carrito.length === 0} onClick={enviarPedidoWhatsApp} className={`w-full font-bold text-sm py-3.5 rounded-xl text-white flex items-center justify-center gap-2 uppercase tracking-wider ${carrito.length === 0 ? 'bg-neutral-100 text-neutral-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 cursor-pointer'}`}>💬 Confirmar por WhatsApp</button>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* MODAL DEL FORMULARIO ADMINISTRATIVO (REGISTRO NUEVO) */}
-      {modalFormularioAbierto && (
-        <FormularioProducto 
-          alCerrar={() => setModalFormularioAbierto(false)}
-          onProductoRegistrado={() => {
-            setBusqueda(prev => prev + ' ');
-            setTimeout(() => setBusqueda(prev => prev.trim()), 50);
-          }}
-        />
+      {/* 🌟 NUEVO MODAL: HISTORIAL DE PEDIDOS REGISTRADOS EN MYSQL */}
+      {modalPedidosAbierto && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-neutral-200 pb-4 mb-4">
+              <div>
+                <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900">📈 Auditoría Transaccional de Ventas</h3>
+                <p className="text-xs text-neutral-400">Historial completo mapeado desde la tabla `pedidos` en MySQL</p>
+              </div>
+              <button 
+                onClick={() => setModalPedidosAbierto(false)} 
+                className="bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grow overflow-y-auto">
+              {cargandoPedidos ? (
+                <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Extrayendo datos de base de datos...</p>
+              ) : pedidos.length === 0 ? (
+                <p className="text-center py-12 text-sm text-neutral-400 font-bold">Aún no se registran transacciones de venta en el sistema.</p>
+              ) : (
+                <div className="border border-neutral-200 rounded-2xl overflow-hidden shadow-2xs">
+                  <table className="w-full text-left border-collapse bg-white">
+                    <thead>
+                      <tr className="bg-neutral-50 border-b border-neutral-200 text-[10px] font-black uppercase tracking-wider text-neutral-400">
+                        <th className="px-4 py-3">ID Pedido</th>
+                        <th className="px-4 py-3">Fecha y Hora</th>
+                        <th className="px-4 py-3">Cliente</th>
+                        <th className="px-4 py-3 text-center">Ítems</th>
+                        <th className="px-4 py-3">Estado</th>
+                        <th className="px-4 py-3 text-right">Total Facturado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
+                      {pedidos.map((order) => (
+                        <tr key={order.id} className="hover:bg-neutral-50/50 transition-colors">
+                          <td className="px-4 py-3.5 font-mono font-bold text-neutral-400">#00{order.id}</td>
+                          <td className="px-4 py-3.5 text-neutral-500">{new Date(order.fecha_pedido).toLocaleString('es-PE')}</td>
+                          <td className="px-4 py-3.5 font-bold text-neutral-900">{order.nombre_cliente}</td>
+                          <td className="px-4 py-3.5 text-center font-bold text-neutral-500 bg-neutral-50/30">
+                            {order.detalles?.reduce((sum, d) => sum + d.cantidad, 0)} u.
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2 py-1 rounded-md border border-amber-200">
+                              {order.estado}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-right font-black text-neutral-900 text-sm">S/. {parseFloat(order.total).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* MODAL DE EDICIÓN DE STOCK EN LOTE (MÚLTIPLES TALLAS) */}
-      {productoParaStock && (
-        <ModalEditarStock 
-          producto={productoParaStock}
-          alCerrar={() => setProductoParaStock(null)}
-          onStockActualizado={() => {
-            // Sincroniza y refresca la vista del feed de inmediato
-            setBusqueda(prev => prev + ' ');
-            setTimeout(() => setBusqueda(prev => prev.trim()), 50);
-          }}
-        />
-      )}
+      {modalFormularioAbierto && <FormularioProducto alCerrar={() => setModalFormularioAbierto(false)} onProductoRegistrado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
+      {productoParaStock && <ModalEditarStock producto={productoParaStock} alCerrar={() => setProductoParaStock(null)} onStockActualizado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
 
     </div>
   );

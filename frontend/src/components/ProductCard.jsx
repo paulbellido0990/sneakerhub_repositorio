@@ -1,11 +1,14 @@
 import React from 'react';
 
-export default function ProductCard({ producto, alSeleccionar, onEditarStock }) {
-  const token = localStorage.getItem('token'); // Detectar si hay sesión administrativa activa
+export default function ProductCard({ producto, alSeleccionar, onEditarStock, onOcultarProducto, onActivarProducto }) {
+  const token = localStorage.getItem('token'); 
   
   const variantePrincipal = producto.variantes_color?.[0];
   const imagenUrl = variantePrincipal?.imagenes?.find(img => img.es_principal)?.url_imagen 
     || variantePrincipal?.imagenes?.[0]?.url_imagen;
+
+  // Bandera de control para saber si este calzado está actualmente archivado
+  const esInactivo = producto.estado === "INACTIVO";
 
   return (
     <div className="bg-white rounded-2xl border border-neutral-200/80 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between relative group">
@@ -18,7 +21,7 @@ export default function ProductCard({ producto, alSeleccionar, onEditarStock }) 
       )}
 
       {/* Área Clickable de la Ficha Técnica */}
-      <div onClick={() => alSeleccionar(producto)} className="cursor-pointer grow">
+      <div onClick={() => !esInactivo && alSeleccionar(producto)} className={`grow ${esInactivo ? 'cursor-default opacity-75' : 'cursor-pointer'}`}>
         <div className="aspect-square bg-neutral-50 p-6 flex items-center justify-center overflow-hidden">
           <img 
             src={imagenUrl || "https://images.unsplash.com/photo-1600185365483-26d7a4cc7519?q=80&w=500"} 
@@ -29,7 +32,7 @@ export default function ProductCard({ producto, alSeleccionar, onEditarStock }) 
 
         <div className="p-4 space-y-1">
           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-            {producto.marca?.nombre || "Calzado"}
+            {producto.marca?.nombre || "Calzado"} {esInactivo && "• 🗄️ ARCHIVADO"}
           </span>
           <h3 className="text-sm font-black text-neutral-900 tracking-tight uppercase line-clamp-1">
             {producto.nombre}
@@ -43,18 +46,52 @@ export default function ProductCard({ producto, alSeleccionar, onEditarStock }) 
         </div>
       </div>
 
-      {/* 🛠️ CONTROLES EXCLUSIVOS DE ADMINISTRADOR */}
-      {token && onEditarStock && (
+      {/* 🛠️ CONTROLES EXCLUSIVOS DE ADMINISTRADOR COMPORTAMIENTO DINÁMICO */}
+      {token && onEditarStock && onOcultarProducto && onActivarProducto && (
         <div className="p-3 bg-neutral-50 border-t border-neutral-100 flex gap-2">
+          
           <button 
+            disabled={esInactivo}
             onClick={(e) => {
-              e.stopPropagation(); // Evita abrir el modal de cliente por accidente
+              e.stopPropagation(); 
               onEditarStock(producto);
             }}
-            className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-[11px] py-2 rounded-xl uppercase tracking-wider transition-colors cursor-pointer text-center"
+            className={`w-1/2 font-bold text-[11px] py-2 rounded-xl uppercase tracking-wider transition-colors text-center ${
+              esInactivo 
+                ? 'bg-neutral-100 text-neutral-300 border border-neutral-200 cursor-not-allowed'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 cursor-pointer'
+            }`}
           >
-            ✏️ Editar Stock
+            ✏️ Stock
           </button>
+          
+          {esInactivo ? (
+            /* 🔥 SI ESTÁ FILTRADO COMO INACTIVO: Pinta el botón azul de Reactivación */
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`¿Deseas reactivar "${producto.nombre}" y devolverlo al catálogo público?`)) {
+                  onActivarProducto(producto.id);
+                }
+              }}
+              className="w-1/2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-[11px] py-2 rounded-xl uppercase tracking-wider transition-colors cursor-pointer text-center"
+            >
+              🔄 Activar
+            </button>
+          ) : (
+            /* ✅ SI ESTÁ ACTIVO: Pinta el botón rojo estándar de Borrado Lógico */
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`¿Estás seguro de que deseas ocultar "${producto.nombre}" del catálogo público?`)) {
+                  onOcultarProducto(producto.id);
+                }
+              }}
+              className="w-1/2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-[11px] py-2 rounded-xl uppercase tracking-wider transition-colors cursor-pointer text-center"
+            >
+              🗑️ Ocultar
+            </button>
+          )}
         </div>
       )}
 
