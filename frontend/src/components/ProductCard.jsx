@@ -7,7 +7,10 @@ export default function ProductCard({ producto, alSeleccionar, onEditarStock, on
   const imagenUrl = variantePrincipal?.imagenes?.find(img => img.es_principal)?.url_imagen 
     || variantePrincipal?.imagenes?.[0]?.url_imagen;
 
-  // Bandera de control para saber si este calzado está actualmente archivado
+  // 🌟 DEFENSIVO: Si el backend no envía 'precio_final', lo calculamos en caliente aquí
+  const precioCalculado = producto.precio_final 
+    || (producto.precio_base * (1 - (producto.porcentaje_descuento || 0) / 100)).toFixed(2);
+
   const esInactivo = producto.estado === "INACTIVO";
 
   return (
@@ -38,7 +41,8 @@ export default function ProductCard({ producto, alSeleccionar, onEditarStock, on
             {producto.nombre}
           </h3>
           <div className="flex items-baseline gap-2 pt-1">
-            <span className="text-base font-black text-neutral-900">S/. {producto.precio_final}</span>
+            {/* 🌟 Muestra el precio calculado de forma segura */}
+            <span className="text-base font-black text-neutral-900">S/. {precioCalculado}</span>
             {producto.porcentaje_descuento > 0 && (
               <span className="text-xs text-neutral-400 line-through">S/. {producto.precio_base}</span>
             )}
@@ -46,10 +50,9 @@ export default function ProductCard({ producto, alSeleccionar, onEditarStock, on
         </div>
       </div>
 
-      {/* 🛠️ CONTROLES EXCLUSIVOS DE ADMINISTRADOR COMPORTAMIENTO DINÁMICO */}
+      {/* CONTROLES ADMINISTRATIVOS */}
       {token && onEditarStock && onOcultarProducto && onActivarProducto && (
         <div className="p-3 bg-neutral-50 border-t border-neutral-100 flex gap-2">
-          
           <button 
             disabled={esInactivo}
             onClick={(e) => {
@@ -66,11 +69,10 @@ export default function ProductCard({ producto, alSeleccionar, onEditarStock, on
           </button>
           
           {esInactivo ? (
-            /* 🔥 SI ESTÁ FILTRADO COMO INACTIVO: Pinta el botón azul de Reactivación */
             <button 
               onClick={(e) => {
                 e.stopPropagation();
-                if (window.confirm(`¿Deseas reactivar "${producto.nombre}" y devolverlo al catálogo público?`)) {
+                if (window.confirm(`¿Deseas reactivar "${producto.nombre}"?`)) {
                   onActivarProducto(producto.id);
                 }
               }}
@@ -79,11 +81,10 @@ export default function ProductCard({ producto, alSeleccionar, onEditarStock, on
               🔄 Activar
             </button>
           ) : (
-            /* ✅ SI ESTÁ ACTIVO: Pinta el botón rojo estándar de Borrado Lógico */
             <button 
               onClick={(e) => {
                 e.stopPropagation();
-                if (window.confirm(`¿Estás seguro de que deseas ocultar "${producto.nombre}" del catálogo público?`)) {
+                if (window.confirm(`¿Estás seguro de que deseas ocultar "${producto.nombre}"?`)) {
                   onOcultarProducto(producto.id);
                 }
               }}

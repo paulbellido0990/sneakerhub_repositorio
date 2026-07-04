@@ -6,13 +6,16 @@ import FormularioProducto from './components/FormularioProducto';
 import ModalEditarStock from './components/ModalEditarStock'; 
 
 export default function App() {
+  // =============================================================================
+  // 🛡️ ESTADOS DE AUTENTICACIÓN Y CONTROL DE ACCESO BLINDADO
+  // =============================================================================
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [mostrarLogin, setMostrarLogin] = useState(false);
   const [modalFormularioAbierto, setModalFormularioAbierto] = useState(false);
   const [validandoSesion, setValidandoSesion] = useState(true); 
   const [productoParaStock, setProductoParaStock] = useState(null); 
 
-  // Controladores de Catálogo y Filtros
+  // Controladores de Catálogo General y Filtros Concurrentes
   const [productos, setProductos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
@@ -20,14 +23,19 @@ export default function App() {
   const [tallaFiltro, setTallaFiltro] = useState('');
   const [verOcultos, setVerOcultos] = useState(false); 
 
-  // 🌟 NUEVOS ESTADOS: Control del historial de transacciones relacionales
+  // Historial de Transacciones Relacionales (MySQL)
   const [modalPedidosAbierto, setModalPedidosAbierto] = useState(false);
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(false);
+  
+  // 🌟 NUEVO ESTADO: Almacena el ID del pedido que se encuentra desplegado/expandido
+  const [pedidoExpandido, setPedidoExpandido] = useState(null);
 
+  // Controladores de Ficha Técnica Modal
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
 
+  // Estados del Carrito con Persistencia Local Activa
   const [carrito, setCarrito] = useState(() => {
     const datosLocales = localStorage.getItem('sneakerhub_cart');
     return datosLocales ? JSON.parse(datosLocales) : [];
@@ -38,9 +46,9 @@ export default function App() {
     localStorage.setItem('sneakerhub_cart', JSON.stringify(carrito));
   }, [carrito]);
 
-  const totalCompra = carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+  const totalCompra = carrito.reduce((sum, item) => sum + (Number(item.precio) * Number(item.cantidad)), 0);
 
-  // EFFECT 1: Validación de Credenciales
+  // EFFECT 1: Validación de Credenciales (F5)
   useEffect(() => {
     const tokenGuardado = localStorage.getItem('token');
     if (!tokenGuardado) {
@@ -77,10 +85,11 @@ export default function App() {
       });
   }, [busqueda, tallaFiltro, verOcultos]);
 
-  // 🌟 EFECTO 3: Carga bajo demanda del historial de ventas al abrir el panel
+  // EFECTO 3: Carga del Historial de Ventas
   useEffect(() => {
     if (modalPedidosAbierto) {
       setCargandoPedidos(true);
+      setPedidoExpandido(null); // Resetea cualquier fila expandida previa al abrir
       const tokenGuardado = localStorage.getItem('token');
       API.get('/pedidos/', { headers: { Authorization: `Bearer ${tokenGuardado}` } })
         .then((res) => {
@@ -121,22 +130,35 @@ export default function App() {
     }
   };
 
+  // GESTORES OPERATIVOS DEL CARRITO
   const agregarAlCarrito = () => {
     if (!tallaSeleccionada) { alert("Selecciona una talla"); return; }
     const variante = productoSeleccionado.variantes_color?.[0];
     const img = variante?.imagenes?.find(i => i.es_principal)?.url_imagen || variante?.imagenes?.[0]?.url_imagen;
-    const existente = carrito.find(i => i.id === productoSeleccionado.id && i.talla === tallaSeleccionada);
 
-    if (existente) {
-      setCarrito(carrito.map(i => (i.id === productoSeleccionado.id && i.talla === tallaSeleccionada) ? { ...i, cantidad: i.cantidad + 1 } : i));
-    } else {
-      setCarrito([...carrito, { id: productoSeleccionado.id, nombre: productoSeleccionado.nombre, marca: productoSeleccionado.marca?.nombre, precio: parseFloat(productoSeleccionado.precio_final), talla: tallaSeleccionada, imagen: img, cantidad: 1 }]);
-    }
-    setTallaSeleccionada(''); setProductoSeleccionado(null); setMenuCarritoAbierto(true);
+    const precioReal = productoSeleccionado.precio_final 
+      || (productoSeleccionado.precio_base * (1 - (productoSeleccionado.porcentaje_descuento || 0) / 100)).toFixed(2);
+
+    setCarrito((prevCarrito) => {
+      const existente = prevCarrito.find(i => i.id === productoSeleccionado.id && i.talla === tallaSeleccionada);
+      if (existente) {
+        return prevCarrito.map(i => (i.id === productoSeleccionado.id && i.talla === tallaSeleccionada) ? { ...i, cantidad: i.cantidad + 1 } : i);
+      } else {
+        return [...prevCarrito, { id: productoSeleccionado.id, nombre: productoSeleccionado.nombre, marca: productoSeleccionado.marca?.nombre, precio: parseFloat(precioReal), talla: tallaSeleccionada, imagen: img, cantidad: 1 }];
+      }
+    });
+
+    setTallaSeleccionada(''); 
+    setProductoSeleccionado(null); 
+    setMenuCarritoAbierto(true);
   };
 
   const modificarCantidad = (id, talla, factor) => {
-    setCarrito(carrito.map(i => (i.id === id && i.talla === talla) ? { ...i, cantidad: i.cantidad + factor } : i).filter(i => i.cantidad > 0));
+    setCarrito((prevCarrito) =>
+      prevCarrito
+        .map(i => (i.id === id && i.talla === talla) ? { ...i, cantidad: Number(i.cantidad) + factor } : i)
+        .filter(i => i.cantidad > 0)
+    );
   };
 
   const enviarPedidoWhatsApp = async () => {
@@ -166,12 +188,13 @@ export default function App() {
       setMenuCarritoAbierto(false);
       window.open(`https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`, '_blank');
     } catch (err) {
-      alert(`Error en el motor de inventario: ${err.response?.data?.detail || "No se pudo registrar."}`);
+      alert(`Error en el motor de inventario: ${err.response?.data?.detail || "No se pudo registrar el pedido."}`);
     }
   };
 
+  // Renderizadores de Bloqueo
   if (validandoSesion) return <div className="min-h-screen bg-neutral-50 flex items-center justify-center font-sans"><p className="text-xs font-black tracking-widest text-neutral-400 animate-pulse">Verificando Credenciales...</p></div>;
-  if (mostrarLogin) return <div className="relative"><button onClick={() => setMostrarLogin(false)} className="absolute top-4 left-4 bg-white/10 text-white font-bold text-xs px-4 py-2 rounded-xl border border-gray-700 z-50 cursor-pointer">← Volver</button><Login onLoginSuccess={(t) => { setToken(t); setMostrarLogin(false); }} /></div>;
+  if (mostrarLogin) return <div className="relative"><button onClick={() => setMostrarLogin(false)} className="absolute top-4 left-4 bg-white/10 text-white font-bold text-xs px-4 py-2 rounded-xl border border-gray-700 z-50 cursor-pointer">← Volver al Catálogo</button><Login onLoginSuccess={(t) => { setToken(t); setMostrarLogin(false); }} /></div>;
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans antialiased">
@@ -183,18 +206,8 @@ export default function App() {
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-300 animate-pulse"></span>
             <span>🛡️ Panel Administrativo (Paul)</span>
             <button onClick={() => setModalFormularioAbierto(true)} className="bg-white text-emerald-800 px-3 py-1 rounded-lg text-[11px] font-black hover:bg-neutral-100 cursor-pointer uppercase">+ Añadir Zapatilla</button>
-            
-            <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-neutral-950 text-white'}`}>
-              {verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}
-            </button>
-
-            {/* 🌟 NUEVO BOTÓN: Abre el módulo auditor de pedidos en MySQL */}
-            <button 
-              onClick={() => setModalPedidosAbierto(true)} 
-              className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer"
-            >
-              📋 Historial de Pedidos
-            </button>
+            <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-neutral-950 text-white'}`}>{verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}</button>
+            <button onClick={() => setModalPedidosAbierto(true)} className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer">📋 Historial de Pedidos</button>
           </div>
           <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg text-[11px] font-black cursor-pointer uppercase">Cerrar Sesión</button>
         </div>
@@ -210,9 +223,7 @@ export default function App() {
             ) : (
               <span className="bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl border border-emerald-200">Panel Activo</span>
             )}
-            <button onClick={() => setMenuCarritoAbierto(true)} className="bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer">
-              🛒 Mi Carrito <span className="bg-red-500 text-white text-[10px] h-5 w-5 rounded-full flex items-center justify-center font-black">{carrito.reduce((s, i) => s + i.cantidad, 0)}</span>
-            </button>
+            <button onClick={() => setMenuCarritoAbierto(true)} className="bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer">🛒 Mi Carrito <span className="bg-red-500 text-white text-[10px] h-5 w-5 rounded-full flex items-center justify-center font-black">{carrito.reduce((s, i) => s + i.cantidad, 0)}</span></button>
           </div>
         </div>
       </header>
@@ -228,11 +239,11 @@ export default function App() {
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">Filtrar por tu Talla</label>
             <select value={tallaFiltro} onChange={(e) => setTallaFiltro(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none cursor-pointer">
               <option value="">Todas las tallas disponibles</option>
-              {["38", "39", "40", "41", "42", "43"].map(t => <option key={t} value={t}>Talla {t}</option>)}
+              {["38", "39", "40", "41", "42", "43", "44"].map(t => <option key={t} value={t}>Talla {t}</option>)}
             </select>
           </div>
           <div className="flex items-end">
-            {(busqueda || tallaFiltro) && <button onClick={() => { setBusqueda(''); setTallaFiltro(''); }} className="w-full md:w-auto text-xs font-bold uppercase bg-neutral-100 text-neutral-700 px-5 py-3 rounded-xl cursor-pointer">Limpiar</button>}
+            {(busqueda || tallaFiltro) && <button onClick={() => { setBusqueda(''); setTallaFiltro(''); }} className="w-full md:w-auto text-xs font-bold uppercase bg-neutral-100 text-neutral-700 px-5 py-3 rounded-xl cursor-pointer">Limpiar Filtros</button>}
           </div>
         </div>
       </section>
@@ -244,7 +255,7 @@ export default function App() {
           <div className="flex items-center justify-center py-20"><p className="text-neutral-400 font-medium animate-pulse">Sincronizando con el servidor...</p></div>
         ) : productos.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border p-8">
-            <p className="text-neutral-500 font-bold text-lg">{verOcultos ? "No hay archivados" : "No encontramos zapatillas"}</p>
+            <p className="text-neutral-500 font-bold text-lg">{verOcultos ? "No hay archivados" : "No encontramos zapatillas con esos filtros"}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -266,12 +277,12 @@ export default function App() {
                 <span className="text-xs uppercase font-bold text-neutral-400 tracking-widest">{productoSeleccionado.marca?.nombre} • {productoSeleccionado.categoria?.nombre}</span>
                 <h2 className="text-xl font-black text-neutral-900 mt-1">{productoSeleccionado.nombre}</h2>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-2xl font-black text-neutral-900">S/. {productoSeleccionado.precio_final}</span>
+                  <span className="text-2xl font-black text-neutral-900">S/. {productoSeleccionado.precio_final || (productoSeleccionado.precio_base * (1 - (productoSeleccionado.porcentaje_descuento || 0) / 100)).toFixed(2)}</span>
                   {productoSeleccionado.porcentaje_descuento > 0 && <span className="text-sm text-neutral-400 line-through">S/. {productoSeleccionado.precio_base}</span>}
                 </div>
-                <p className="text-xs text-neutral-500 mt-4 leading-relaxed">{productoSeleccionado.descripcion || "Sin descripción técnica."}</p>
+                <p className="text-xs text-neutral-500 mt-4 leading-relaxed">{productoSeleccionado.descripcion || "Sin descripción técnica disponible por el momento."}</p>
                 <div className="border-t border-neutral-100 my-4"></div>
-                <h4 className="text-xs font-bold text-neutral-400 mb-3">Tallas:</h4>
+                <h4 className="text-xs font-bold text-neutral-400 mb-3">Selecciona tu talla:</h4>
                 <div className="flex flex-wrap gap-2">
                   {productoSeleccionado.variantes_color?.[0]?.tallares_stock?.map((item) => (
                     <button key={item.id} disabled={item.stock === 0} onClick={() => setTallaSeleccionada(item.talla)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${item.stock === 0 ? 'border-neutral-100 text-neutral-300 bg-neutral-100 line-through' : tallaSeleccionada === item.talla ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 text-neutral-800 cursor-pointer'}`}>{item.talla}</button>
@@ -284,13 +295,13 @@ export default function App() {
         </div>
       )}
 
-      {/* DRAWER LATERAL: RESUMEN DEL CARRITO */}
+      {/* DRAWER LATERAL: MI PEDIDO */}
       {menuCarritoAbierto && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-end">
           <div className="absolute inset-0" onClick={() => setMenuCarritoAbierto(false)}></div>
-          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between p-6 animate-in slide-in-from-right">
+          <div key={totalCompra} className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between p-6 animate-in slide-in-from-right duration-150">
             <div>
-              <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4"><h2 className="text-lg font-black uppercase">Mi Pedido</h2><button onClick={() => setMenuCarritoAbierto(false)} className="text-neutral-400 font-bold p-1 cursor-pointer">Cerrar ✕</button></div>
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4"><h2 className="text-lg font-black uppercase">Mi Pedido</h2><button type="button" onClick={() => setMenuCarritoAbierto(false)} className="text-neutral-400 font-bold p-1 cursor-pointer">Cerrar ✕</button></div>
               <div className="overflow-y-auto max-h-[65vh] space-y-4 pr-1">
                 {carrito.length === 0 ? <p className="text-center text-neutral-400 text-sm py-12">Carrito vacío.</p> : (
                   carrito.map((item) => (
@@ -299,14 +310,14 @@ export default function App() {
                       <div className="grow">
                         <span className="text-[10px] font-bold text-neutral-400 uppercase">{item.marca} • Talla {item.talla}</span>
                         <h4 className="text-sm font-bold text-neutral-900 line-clamp-1">{item.nombre}</h4>
-                        <p className="text-sm font-black text-neutral-900 mt-1">S/. {(item.precio * item.cantidad).toFixed(2)}</p>
+                        <p className="text-sm font-black text-neutral-900 mt-1">S/. {(Number(item.precio) * Number(item.cantidad)).toFixed(2)}</p>
                         <div className="flex items-center gap-2.5 mt-2">
-                          <button onClick={() => modificarCantidad(item.id, item.talla, -1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer">-</button>
-                          <span className="text-xs font-bold text-neutral-800 w-4 text-center">{item.cantidad}</span>
-                          <button onClick={() => modificarCantidad(item.id, item.talla, 1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer">+</button>
+                          <button type="button" onClick={() => modificarCantidad(item.id, item.talla, -1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer hover:bg-neutral-200 text-neutral-800 transition-all">-</button>
+                          <span className="text-xs font-black text-neutral-900 w-5 text-center inline-block">{item.cantidad}</span>
+                          <button type="button" onClick={() => modificarCantidad(item.id, item.talla, 1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer hover:bg-neutral-200 text-neutral-800 transition-all">+</button>
                         </div>
                       </div>
-                      <button onClick={() => setCarrito(carrito.filter(i => !(i.id === item.id && i.talla === item.talla)))} className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold cursor-pointer">✕</button>
+                      <button type="button" onClick={() => setCarrito(carrito.filter(i => !(i.id === item.id && i.talla === item.talla)))} className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold cursor-pointer">✕</button>
                     </div>
                   ))
                 )}
@@ -314,27 +325,22 @@ export default function App() {
             </div>
             <div className="border-t border-neutral-100 pt-4 mt-4">
               <div className="flex items-center justify-between mb-4"><span className="text-sm font-bold text-neutral-500 uppercase">Total Neto:</span><span className="text-2xl font-black text-neutral-900">S/. {totalCompra.toFixed(2)}</span></div>
-              <button disabled={carrito.length === 0} onClick={enviarPedidoWhatsApp} className={`w-full font-bold text-sm py-3.5 rounded-xl text-white flex items-center justify-center gap-2 uppercase tracking-wider ${carrito.length === 0 ? 'bg-neutral-100 text-neutral-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 cursor-pointer'}`}>💬 Confirmar por WhatsApp</button>
+              <button type="button" disabled={carrito.length === 0} onClick={enviarPedidoWhatsApp} className="w-full font-bold text-sm py-3.5 rounded-xl text-white flex items-center justify-center gap-2 uppercase tracking-wider bg-green-600 hover:bg-green-700 cursor-pointer">💬 Confirmar por WhatsApp</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 🌟 NUEVO MODAL: HISTORIAL DE PEDIDOS REGISTRADOS EN MYSQL */}
+      {/* MODAL: AUDITORÍA TRANSACCIONAL DE PEDIDOS CON DESGLOSE DESPLEGABLE */}
       {modalPedidosAbierto && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-neutral-200 pb-4 mb-4">
               <div>
                 <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900">📈 Auditoría Transaccional de Ventas</h3>
-                <p className="text-xs text-neutral-400">Historial completo mapeado desde la tabla `pedidos` en MySQL</p>
+                <p className="text-xs text-neutral-400">Haz clic en cualquier pedido para desplegar las zapatillas compradas</p>
               </div>
-              <button 
-                onClick={() => setModalPedidosAbierto(false)} 
-                className="bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs"
-              >
-                ✕
-              </button>
+              <button onClick={() => setModalPedidosAbierto(false)} className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
 
             <div className="grow overflow-y-auto">
@@ -346,32 +352,71 @@ export default function App() {
                 <div className="border border-neutral-200 rounded-2xl overflow-hidden shadow-2xs">
                   <table className="w-full text-left border-collapse bg-white">
                     <thead>
-                      <tr className="bg-neutral-50 border-b border-neutral-200 text-[10px] font-black uppercase tracking-wider text-neutral-400">
+                      <tr className="bg-neutral-50 text-[10px] font-black uppercase tracking-wider text-neutral-400 border-b border-neutral-200">
                         <th className="px-4 py-3">ID Pedido</th>
                         <th className="px-4 py-3">Fecha y Hora</th>
                         <th className="px-4 py-3">Cliente</th>
-                        <th className="px-4 py-3 text-center">Ítems</th>
+                        <th className="px-4 py-3 text-center">Volumen</th>
                         <th className="px-4 py-3">Estado</th>
-                        <th className="px-4 py-3 text-right">Total Facturado</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                        <th className="px-4 py-3 text-center">Acción</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-neutral-100 text-xs text-neutral-700">
-                      {pedidos.map((order) => (
-                        <tr key={order.id} className="hover:bg-neutral-50/50 transition-colors">
-                          <td className="px-4 py-3.5 font-mono font-bold text-neutral-400">#00{order.id}</td>
-                          <td className="px-4 py-3.5 text-neutral-500">{new Date(order.fecha_pedido).toLocaleString('es-PE')}</td>
-                          <td className="px-4 py-3.5 font-bold text-neutral-900">{order.nombre_cliente}</td>
-                          <td className="px-4 py-3.5 text-center font-bold text-neutral-500 bg-neutral-50/30">
-                            {order.detalles?.reduce((sum, d) => sum + d.cantidad, 0)} u.
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2 py-1 rounded-md border border-amber-200">
-                              {order.estado}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-right font-black text-neutral-900 text-sm">S/. {parseFloat(order.total).toFixed(2)}</td>
-                        </tr>
-                      ))}
+                    <tbody className="divide-y text-xs text-neutral-700">
+                      {pedidos.map((order) => {
+                        const estaAbierto = pedidoExpandido === order.id;
+                        return (
+                          <React.Fragment key={order.id}>
+                            {/* Renglón Principal */}
+                            <tr 
+                              onClick={() => setPedidoExpandido(estaAbierto ? null : order.id)}
+                              className={`hover:bg-neutral-50/70 transition-colors cursor-pointer ${estaAbierto ? 'bg-blue-50/30' : ''}`}
+                            >
+                              <td className="px-4 py-3.5 font-mono font-bold text-neutral-400">#00{order.id}</td>
+                              <td className="px-4 py-3.5 text-neutral-500">{new Date(order.fecha_pedido).toLocaleString('es-PE')}</td>
+                              <td className="px-4 py-3.5 font-bold text-neutral-900">{order.nombre_cliente}</td>
+                              <td className="px-4 py-3.5 text-center font-bold text-neutral-500 bg-neutral-50/30">{order.detalles?.reduce((sum, d) => sum + d.cantidad, 0)} u.</td>
+                              <td className="px-4 py-3.5"><span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2 py-1 rounded-md border border-amber-200">{order.estado}</span></td>
+                              <td className="px-4 py-3.5 text-right font-black text-neutral-900 text-sm">S/. {parseFloat(order.total).toFixed(2)}</td>
+                              <td className="px-4 py-3.5 text-center">
+                                <button type="button" className="text-blue-600 font-bold text-xs hover:underline">
+                                  {estaAbierto ? "🙈 Cerrar" : "👁️ Detalles"}
+                                </button>
+                              </td>
+                            </tr>
+
+                            {/* 🌟 FILA DESPLEGABLE DINÁMICA: Renderiza el desglose de lo que pidió en caliente */}
+                            {estaAbierto && (
+                              <tr className="bg-neutral-50/60 select-none animate-in fade-in duration-200">
+                                <td colSpan="7" className="px-6 py-4 border-t border-b border-neutral-200">
+                                  <div className="space-y-2">
+                                    <h4 className="text-[10px] font-black uppercase text-neutral-400 tracking-widest">📦 Artículos Facturados en la Transacción:</h4>
+                                    <div className="bg-white rounded-xl border border-neutral-200/80 overflow-hidden divide-y divide-neutral-100 shadow-3xs">
+                                      {order.detalles?.map((det) => (
+                                        <div key={det.id} className="p-3.5 flex justify-between items-center text-xs">
+                                          <div>
+                                            <span className="font-black text-neutral-900 uppercase tracking-tight">
+                                              {det.producto?.nombre || `Calzado Modelo #${det.producto_id}`}
+                                            </span>
+                                            <span className="bg-neutral-100 text-neutral-600 font-bold ml-3 px-2 py-0.5 rounded-md text-[10px]">
+                                              📏 Talla {det.talla}
+                                            </span>
+                                          </div>
+                                          <div className="flex gap-8 text-neutral-500 font-medium">
+                                            <span>Cant: <b className="text-neutral-900 font-bold">{det.cantidad}</b></span>
+                                            <span>Precio: <b className="text-neutral-900 font-bold">S/. {parseFloat(det.precio_unitario).toFixed(2)}</b></span>
+                                            <span className="font-black text-neutral-900 border-l border-neutral-200 pl-4">Subtotal: S/. {(det.cantidad * det.precio_unitario).toFixed(2)}</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

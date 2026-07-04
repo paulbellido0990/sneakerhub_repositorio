@@ -24,20 +24,22 @@ class PedidoCreate(BaseModel):
 
 
 # =============================================================================
-# 📋 ENDPOINT: LISTAR HISTORIAL DE VENTAS
+# 📋 ENDPOINT: LISTAR HISTORIAL DE VENTAS CON DESGLOSE DE PRODUCTOS
 # =============================================================================
 @router.get("/", summary="Listar todos los pedidos asentados")
 def listar_pedidos(db: Session = Depends(get_db)):
     """
-    Trae el histórico completo de pedidos desde MySQL ordenados por fecha descendiente.
+    Trae el histórico completo desde MySQL realizando una carga profunda relacional 
+    para inyectar los datos del Producto en cada renglón del detalle.
     """
     try:
+        # 🌟 MEJORADO: Carga en cascada Pedido -> Detalles -> Producto para capturar los nombres reales
         pedidos = db.query(Pedido).options(
-            joinedload(Pedido.detalles)
+            joinedload(Pedido.detalles).joinedload(DetallePedido.producto)
         ).order_by(Pedido.fecha_pedido.desc()).all()
         return pedidos
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"No se pudo extraer el historial: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"No se pudo extraer el historial auditor: {str(e)}")
 
 
 # =============================================================================
