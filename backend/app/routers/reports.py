@@ -1,93 +1,126 @@
-import traceback
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func, extract
+from datetime import datetime
 from app.database import get_db
-from app.models.product import Producto, VarianteColor, TallaStock, Marca
+from app.models.order import Pedido, DetallePedido
+from app.models.product import Producto, Marca, VarianteColor, TallaStock
 from app.routers.auth import verificar_admin
 
 router = APIRouter(
     prefix="/api/admin/reportes",
-    tags=["Reportes Analíticos"]
+    tags=["Reportes y Analítica"]
 )
 
 # =============================================================================
-# 📊 RUTA ANALÍTICA CORREGIDA: EXTRACCIÓN DE ENTIEDAD COLOR (HU-08)
+# 📋 ENDPOINT ANTIGUO: TELEMETRÍA DE BAJO STOCK (MANTENIDO PARA HU-08)
 # =============================================================================
-@router.get("/bajo-stock", summary="Telemetría de inventarios críticos (Stock <= 2)")
-def obtener_bajo_stock(
-    db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin) # 🔐 Guardián perimetral JWT activo
-):
+@router.get("/bajo-stock", summary="Telemetría de variantes con stock crítico")
+def reportar_bajo_stock(db: Session = Depends(get_db), admin_actual = Depends(verificar_admin)):
+    try:
+        resultados = db.query(
+            TallaStock.id.label("talla_id"),
+            TallaStock.talla,
+            TallaStock.stock,
+            VarianteColor.id.label("variante_id"),
+            VarianteColor.color,
+            Producto.nombre,
+            Marca.nombre.label("marca")
+        ).join(
+            VarianteColor, TallaStock.variante_color_id == VarianteColor.id
+        ).join(
+            Producto, VarianteColor.producto_id == Producto.id
+        ).join(
+            Marca, Producto.marca_id == Marca.id
+        ).filter(
+            TallaStock.stock <= 2,
+            Producto.estado == "ACTIVO"
+        ).order_by(
+            TallaStock.stock.asc()
+        ).all()
+        
+        return [dict(r._mapping) for r in resultados]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fallo en agregación de MySQL: {str(e)}")
+
+
+# =============================================================================
+# 📊 NUEVO ENDPOINT (HU-13): CORE DE INTELIGENCIA DE NEGOCIO (BI)
+# =============================================================================
+@router.get("/dashboard-bi", summary="Extraer métricas agregadas de rendimiento comercial")
+def obtener_dashboard_bi(db: Session = Depends(get_db), admin_actual = Depends(verificar_admin)):
     """
-    Extrae las alertas de stock y parsea de forma inteligente si el atributo color
-    es un String plano o una relación de tabla de base de datos (objeto).
+    Calcula de forma síncrona los KPI económicos del mes en curso, el Top 3 de modelos
+    con mayor rotación en Ayacucho y el market share interno por marcas fabricantes.
     """
     try:
-        # 1. Extraer las filas críticas de la tabla de stock (Criterio Stock <= 2)
-        alertas_inventario = db.query(TallaStock).filter(TallaStock.stock <= 2).all()
+        ahora = datetime.utcnow()
+        mes_actual = ahora.month
+        anio_actual = ahora.year
 
-        reporte_mapeado = []
+        # 1. KPI: Ingresos totales acumulados en el mes activo (Solo ventas reales)
+        ingresos_mes = db.query(func.sum(Pedido.total)).filter(
+            extract('month', Pedido.fecha_pedido) == mes_actual,
+            extract('year', Pedido.fecha_pedido) == anio_actual,
+            Pedido.estado != "PENDIENTE" # Excluimos preventas o pedidos no confirmados
+        ).scalar() or 0.0
 
-        # 2. Resolver las dependencias de forma secuencial por ID físico
-        for item in alertas_inventario:
-            
-            # Lookup de la variante de color
-            variante = db.query(VarianteColor).filter(VarianteColor.id == item.variante_color_id).first()
-            if not variante:
-                continue
-            
-            # Lookup del producto base asegurando que esté activo en la vitrina
-            producto = db.query(Producto).filter(Producto.id == variante.producto_id).first()
-            if not producto or producto.estado != "ACTIVO":
-                continue
-            
-            # Lookup de la marca fabricante
-            marca_nombre = "Sin Marca"
-            if producto.marca_id:
-                marca = db.query(Marca).filter(Marca.id == producto.marca_id).first()
-                if marca:
-                    marca_nombre = marca.nombre
+        # 2. TOP 3: Zapatillas más vendidas por volumen de unidades
+        top_zapatillas_query = db.query(
+            Producto.nombre,
+            func.sum(DetallePedido.cantidad).label("unidades_vendidas")
+        ).join(
+            DetallePedido, DetallePedido.producto_id == Producto.id
+        ).join(
+            Pedido, DetallePedido.pedido_id == Pedido.id
+        ).filter(
+            Pedido.estado != "PENDIENTE"
+        ).group_by(
+            Producto.id
+        ).order_by(
+            func.sum(DetallePedido.cantidad).desc()
+        ).limit(3).all()
 
-            # 🌟 EXTRACCIÓN ELÁSTICA: Soporta cadenas y objetos relacionales de Color ({id, nombre, codigo_hex})
-            color_text = "Estándar"
-            for attr in ["color", "color_nombre", "nombre_color"]:
-                if hasattr(variante, attr) and getattr(variante, attr):
-                    val = getattr(variante, attr)
-                    
-                    # SI ES UN OBJETO RELACIONAL: Extraemos su propiedad 'nombre' descubierta en consola
-                    if hasattr(val, "nombre") and getattr(val, "nombre"):
-                        color_text = getattr(val, "nombre")
-                    # Fallback si el objeto tiene formato de diccionario por configuración del ORM
-                    elif isinstance(val, dict) and "nombre" in val:
-                        color_text = val["nombre"]
-                    # SI ES UNA CADENA DE TEXTO DIRECTA:
-                    elif isinstance(val, str):
-                        color_text = val
-                    break
+        top_3_zapatillas = [
+            {"nombre": r.nombre, "unidades": int(r.unidades_vendidas)} 
+            for r in top_zapatillas_query
+        ]
 
-            # Insertar nodo formateado con un String primitivo puro hacia el Frontend
-            reporte_mapeado.append({
-                "talla_id": item.id,
-                "producto_id": producto.id,
-                "nombre": producto.nombre,
-                "marca": marca_nombre,
-                "color": str(color_text), # Garantiza que viaje un texto limpio hacia React
-                "talla": item.talla,
-                "stock": item.stock
-            })
-        
-        # 3. Ordenación: los quiebres absolutos (Stock = 0) van primero
-        reporte_mapeado.sort(key=lambda x: x["stock"])
-        
-        return reporte_mapeado
+        # 3. SHARE: Distribución de mercado interno por marca fabricante
+        distribucion_marcas_query = db.query(
+            Marca.nombre,
+            func.sum(DetallePedido.cantidad).label("unidades_marca")
+        ).join(
+            Producto, Producto.marca_id == Marca.id
+        ).join(
+            DetallePedido, DetallePedido.producto_id == Producto.id
+        ).join(
+            Pedido, DetallePedido.pedido_id == Pedido.id
+        ).filter(
+            Pedido.estado != "PENDIENTE"
+        ).group_by(
+            Marca.id
+        ).all()
+
+        total_unidades_marcas = sum(int(r.unidades_marca) for r in distribucion_marcas_query) or 1
+
+        share_marcas = [
+            {
+                "marca": r.nombre,
+                "unidades": int(r.unidades_marca),
+                "porcentaje": round((int(r.unidades_marca) / total_unidades_marcas) * 100, 1)
+            }
+            for r in distribucion_marcas_query
+        ]
+
+        return {
+            "ingresos_mensuales": float(ingresos_mes),
+            "top_3": top_3_zapatillas,
+            "distribucion_marcas": share_marcas
+        }
 
     except Exception as e:
-        print("\n" + "="*80)
-        print("🚨 DETECTOR DE EXCEPCIONES EN TELEMETRÍA (REPORTS.PY):")
-        traceback.print_exc()
-        print("="*80 + "\n")
-        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error en la resolución interna de inventarios: {str(e)}"
+            detail=f"Fallo en la consulta analítica multidimensional: {str(e)}"
         )

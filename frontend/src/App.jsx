@@ -39,6 +39,11 @@ export default function App() {
   const [cargandoMisPedidos, setCargandoMisPedidos] = useState(false);
   const [miPedidoExpandido, setMiPedidoExpandido] = useState(null);
 
+  // 📊 ESTADOS DEL DASHBOARD DE INTELIGENCIA DE NEGOCIO (HU-13)
+  const [verDashboardBI, setVerDashboardBI] = useState(false);
+  const [datosBI, setDatosBI] = useState(null);
+  const [cargandoBI, setCargandoBI] = useState(false);
+
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
 
@@ -156,6 +161,23 @@ export default function App() {
     }
   }, [modalMisPedidosAbierto, token]);
 
+  // 🌟 CONSUMO DE TELEMETRÍA AGREGADA MULTIDIMENSIONAL (HU-13)
+  useEffect(() => {
+    if (verDashboardBI && rol === 'admin') {
+      setCargandoBI(true);
+      const tokenGuardado = localStorage.getItem('token');
+      API.get('/admin/reportes/dashboard-bi', { headers: { Authorization: `Bearer ${tokenGuardado}` } })
+        .then((res) => {
+          setDatosBI(res.data);
+          setCargandoBI(false);
+        })
+        .catch((err) => {
+          console.error("Fallo en la extracción de métricas analíticas:", err);
+          setCargandoBI(false);
+        });
+    }
+  }, [verDashboardBI, rol]);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('rol');
@@ -166,6 +188,7 @@ export default function App() {
     setModalPedidosAbierto(false);
     setModalReportesAbierto(false);
     setModalMisPedidosAbierto(false);
+    setVerDashboardBI(false);
   };
 
   const handleOcultarProducto = async (id) => {
@@ -250,15 +273,15 @@ export default function App() {
     }
   };
 
-  // 🌟 MUTACIÓN EN CALIENTE DE ESTADOS (HU-12)
   const handleCambiarEstadoPedido = async (pedidoId, nuevoEstado) => {
     const tokenGuardado = localStorage.getItem('token');
     try {
       await API.put(`/pedidos/${pedidoId}/estado`, { estado: nuevoEstado }, {
         headers: { Authorization: `Bearer ${tokenGuardado}` }
       });
-      // Sincronizamos el estado local instantáneamente sin necesidad de re-consultar la base de datos
       setPedidos((prev) => prev.map(p => p.id === pedidoId ? { ...p, estado: nuevoEstado } : p));
+      // Si el dashboard está abierto, forzamos un refresco sutil de métricas económicas
+      if (verDashboardBI) setVerDashboardBI(false); setTimeout(() => setVerDashboardBI(true), 50);
     } catch (err) {
       alert(`Error al actualizar estado: ${err.response?.data?.detail || err.message}`);
     }
@@ -301,6 +324,11 @@ export default function App() {
             <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-neutral-950 text-white'}`}>{verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}</button>
             <button onClick={() => setModalPedidosAbierto(true)} className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer">📋 Historial de Pedidos</button>
             <button onClick={() => { setModalReportesAbierto(true); setMarcaFiltroReporte(''); }} className="bg-amber-500 text-white hover:bg-amber-600 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer shadow-xs">📈 Alertas de Stock</button>
+            
+            {/* 🌟 ENLACE INTERACTIVO NUEVO: FILTRO DEL PANEL DE CONTROL DE BUSINESS INTELLIGENCE */}
+            <button onClick={() => setVerDashboardBI(!verDashboardBI)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verDashboardBI ? 'bg-white text-neutral-950 shadow-inner' : 'bg-neutral-900 text-white hover:bg-neutral-950'}`}>
+              {verDashboardBI ? "📊 Ocultar BI" : "📊 Ver Dashboard BI"}
+            </button>
           </div>
           <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg text-[11px] font-black cursor-pointer uppercase">Cerrar Sesión</button>
         </div>
@@ -316,11 +344,9 @@ export default function App() {
                 👋 Hola, <b className="text-neutral-900 font-black">{nombreUsuario}</b>
               </span>
             )}
-            
             {token && rol !== 'admin' && (
               <button onClick={() => setModalMisPedidosAbierto(true)} className="border border-neutral-200 text-neutral-700 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer transition-colors">📋 Mis Compras</button>
             )}
-
             {!token ? (
               <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer">Ingresar 🔐</button>
             ) : (
@@ -334,6 +360,83 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* 🌟 SECCIÓN COMPONENTIZADA: DASHBOARD ANALÍTICO DE INTELIGENCIA DE NEGOCIO (HU-13) */}
+      {verDashboardBI && rol === 'admin' && (
+        <section className="bg-neutral-900 border-b border-neutral-800 text-white p-6 animate-in slide-in-from-top duration-200">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-5">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-widest text-emerald-400">📊 Business Intelligence (BI) Engine</h2>
+                <p className="text-[11px] text-neutral-400">Indicadores de rentabilidad agregada y flujos de rotación comercial</p>
+              </div>
+              <span className="text-[10px] bg-neutral-800 border border-neutral-700 px-2 py-1 rounded-md text-neutral-300 font-mono font-bold uppercase">Métricas Reales (No Pendientes)</span>
+            </div>
+
+            {cargandoBI ? (
+              <p className="text-xs font-bold text-neutral-500 py-6 animate-pulse text-center">Calculando métricas agregadas en MySQL...</p>
+            ) : datosBI ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* 1. Tarjeta Métricas Financieras */}
+                <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-2xl flex flex-col justify-between shadow-2xs">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-neutral-500 tracking-wider">Ingresos Netos del Mes</span>
+                    <p className="text-3xl font-black text-white mt-1 font-mono">S/. {datosBI.ingresos_mensuales.toFixed(2)}</p>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-neutral-900/60 flex justify-between items-center text-[10px] text-neutral-400">
+                    <span>Periodo Actual</span>
+                    <span className="text-emerald-400 font-bold">2026 Activo ✓</span>
+                  </div>
+                </div>
+
+                {/* 2. Tarjeta Top 3 Productos */}
+                <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-2xl shadow-2xs">
+                  <span className="text-[10px] font-black uppercase text-neutral-500 tracking-wider block mb-2.5">Top 3 Calzado con Mayor Rotación</span>
+                  {datosBI.top_3.length === 0 ? (
+                    <p className="text-neutral-600 text-xs py-4 font-bold">Sin transacciones registradas este mes.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {datosBI.top_3.map((sneaker, index) => (
+                        <div key={sneaker.nombre} className="flex items-center justify-between text-xs bg-neutral-900/60 p-2 rounded-xl border border-neutral-800/40">
+                          <span className="font-bold text-neutral-300 truncate max-w-[180px]"><b className="text-neutral-500 mr-1">{index + 1}.</b> {sneaker.nombre}</span>
+                          <span className="font-black bg-neutral-800 px-2 py-0.5 rounded-md font-mono text-white">{sneaker.unidades} u.</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Tarjeta Distribución de Marcas */}
+                <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-2xl shadow-2xs">
+                  <span className="text-[10px] font-black uppercase text-neutral-500 tracking-wider block mb-2.5">Preferencia del Público (Porcentaje de Venta)</span>
+                  {datosBI.distribucion_marcas.length === 0 ? (
+                    <p className="text-neutral-600 text-xs py-4 font-bold">Esperando consolidación de marcas.</p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {datosBI.distribucion_marcas.map((brand) => (
+                        <div key={brand.marca} className="text-xs">
+                          <div className="flex justify-between items-center font-bold text-neutral-300 mb-1">
+                            <span className="uppercase text-[11px] font-black tracking-tight">{brand.marca}</span>
+                            <span className="font-mono text-neutral-400">{brand.porcentaje}% <b className="text-[10px] font-normal text-neutral-500">({brand.unidades} u.)</b></span>
+                          </div>
+                          {/* Barra de progreso analítica pura nativa CSS */}
+                          <div className="w-full bg-neutral-900 h-2 rounded-full overflow-hidden border border-neutral-800">
+                            <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${brand.porcentaje}%` }}></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            ) : (
+              <p className="text-xs text-red-400 font-bold">Fallo en la comunicación relacional con MySQL.</p>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* FILTROS */}
       <section className="bg-white border-b border-neutral-200 px-4 py-6">
@@ -445,7 +548,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN - ACTUALIZADO HU-12 CON COMBOBOX CONTROLADO) */}
+      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN) */}
       {modalPedidosAbierto && rol === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
@@ -470,7 +573,6 @@ export default function App() {
                         <th className="px-4 py-3">Fecha y Hora</th>
                         <th className="px-4 py-3">Cliente</th>
                         <th className="px-4 py-3 text-center">Volumen</th>
-                        {/* 🌟 HU-12: El encabezado ahora indica Gestión de Flujo */}
                         <th className="px-4 py-3">Gestión de Estado</th>
                         <th className="px-4 py-3 text-right">Total</th>
                         <th className="px-4 py-3 text-center">Acción</th>
@@ -486,12 +588,10 @@ export default function App() {
                               <td className="px-4 py-3.5 text-neutral-500">{new Date(order.fecha_pedido).toLocaleString('es-PE')}</td>
                               <td className="px-4 py-3.5 font-bold text-neutral-900">{order.nombre_cliente}</td>
                               <td className="px-4 py-3.5 text-center font-bold text-neutral-500 bg-neutral-50/30">{order.detalles?.reduce((sum, d) => sum + d.cantidad, 0)} u.</td>
-                              
-                              {/* 🌟 HU-12 INTEGRADO: Dropdown interactivo con stopPropagation perimetral */}
                               <td className="px-4 py-3.5">
                                 <select
                                   value={order.estado}
-                                  onClick={(e) => e.stopPropagation()} // 🛡️ Evita colapsar la fila al interactuar
+                                  onClick={(e) => e.stopPropagation()} 
                                   onChange={(e) => handleCambiarEstadoPedido(order.id, e.target.value)}
                                   className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg border cursor-pointer focus:outline-none transition-all ${
                                     order.estado === 'PENDIENTE' ? 'bg-amber-100 text-amber-800 border-amber-200' :
@@ -506,7 +606,6 @@ export default function App() {
                                   <option value="ENTREGADO">📦 ENTREGADO</option>
                                 </select>
                               </td>
-
                               <td className="px-4 py-3.5 text-right font-black text-neutral-900 text-sm">S/. {parseFloat(order.total).toFixed(2)}</td>
                               <td className="px-4 py-3.5 text-center"><button type="button" className="text-blue-600 font-bold text-xs hover:underline">{estaAbierto ? "🙈 Cerrar" : "👁️ Detalles"}</button></td>
                             </tr>
