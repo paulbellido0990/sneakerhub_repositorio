@@ -6,19 +6,16 @@ import FormularioProducto from './components/FormularioProducto';
 import ModalEditarStock from './components/ModalEditarStock'; 
 
 export default function App() {
-  // =============================================================================
-  // 🛡️ ESTADOS DE AUTENTICACIÓN Y CONTROL DE ROL EN PERSISTENCIA
-  // =============================================================================
   const [token, setToken] = useState(() => localStorage.getItem('token'));
-  // 🌟 NUEVO: Captura el rol directamente desde el almacenamiento del navegador
   const [rol, setRol] = useState(() => localStorage.getItem('rol'));
+  // 🌟 HU-06: Captura el nombre del usuario desde el almacenamiento local
+  const [nombreUsuario, setNombreUsuario] = useState(() => localStorage.getItem('nombre_usuario'));
   
   const [mostrarLogin, setMostrarLogin] = useState(false);
   const [modalFormularioAbierto, setModalFormularioAbierto] = useState(false);
   const [validandoSesion, setValidandoSesion] = useState(true); 
   const [productoParaStock, setProductoParaStock] = useState(null); 
 
-  // Controladores de Catálogo General y Filtros Concurrentes
   const [productos, setProductos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
@@ -26,17 +23,14 @@ export default function App() {
   const [tallaFiltro, setTallaFiltro] = useState('');
   const [verOcultos, setVerOcultos] = useState(false); 
 
-  // Historial de Transacciones Relacionales (MySQL)
   const [modalPedidosAbierto, setModalPedidosAbierto] = useState(false);
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(false);
   const [pedidoExpandido, setPedidoExpandido] = useState(null);
 
-  // Controladores de Ficha Técnica Modal
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
 
-  // Estados del Carrito con Persistencia Local Activa
   const [carrito, setCarrito] = useState(() => {
     const datosLocales = localStorage.getItem('sneakerhub_cart');
     return datosLocales ? JSON.parse(datosLocales) : [];
@@ -49,41 +43,40 @@ export default function App() {
 
   const totalCompra = carrito.reduce((sum, item) => sum + (Number(item.precio) * Number(item.cantidad)), 0);
 
-  // =============================================================================
-  // 🛡️ EFFECT 1: VALIDACIÓN PERIMETRAL DE ROL Y TOKEN EN ARRANQUE (F5)
-  // =============================================================================
   useEffect(() => {
     const tokenGuardado = localStorage.getItem('token');
     const rolGuardado = localStorage.getItem('rol');
+    const nombreGuardado = localStorage.getItem('nombre_usuario');
     
     if (!tokenGuardado) {
       setToken(null);
       setRol(null);
+      setNombreUsuario(null);
       setValidandoSesion(false);
       return;
     }
     
-    // Consulta de validación al backend
     API.get('/productos/buscar', { params: { estado: 'ACTIVO' } })
       .then(() => {
         setToken(tokenGuardado);
         setRol(rolGuardado);
+        setNombreUsuario(nombreGuardado);
       })
       .catch(() => {
         localStorage.removeItem('token');
         localStorage.removeItem('rol');
+        localStorage.removeItem('nombre_usuario');
         setToken(null);
         setRol(null);
+        setNombreUsuario(null);
       })
       .finally(() => setValidandoSesion(false));
   }, []);
 
-  // EFFECT 2: Sincronización del Feed según Rol (Ver Archivados solo Admin)
   useEffect(() => {
     setCargando(true);
     setError(null);
     
-    // Protección visual: Si un cliente intenta ver ocultos, se fuerza a falso
     const modoOcultoActivo = (rol === 'admin') ? verOcultos : false;
     const params = { estado: modoOcultoActivo ? 'INACTIVO' : 'ACTIVO' };
     
@@ -102,7 +95,6 @@ export default function App() {
       });
   }, [busqueda, tallaFiltro, verOcultos, rol]);
 
-  // EFECTO 3: Historial bajo demanda para auditoría
   useEffect(() => {
     if (modalPedidosAbierto && rol === 'admin') {
       setCargandoPedidos(true);
@@ -122,9 +114,11 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    localStorage.removeItem('rol'); // 🌟 Limpieza total de traza de acceso
+    localStorage.removeItem('rol');
+    localStorage.removeItem('nombre_usuario'); // 🌟 Limpieza HU-06
     setToken(null);
     setRol(null);
+    setNombreUsuario(null);
     setModalPedidosAbierto(false);
   };
 
@@ -149,7 +143,6 @@ export default function App() {
     }
   };
 
-  // GESTORES DEL CARRITO DE COMPRAS
   const agregarAlCarrito = () => {
     if (!tallaSeleccionada) { alert("Selecciona una talla"); return; }
     const variante = productoSeleccionado.variantes_color?.[0];
@@ -184,7 +177,7 @@ export default function App() {
     if (carrito.length === 0) return;
     try {
       const pedidoPayload = {
-        nombre_cliente: rol === 'admin' ? "Administrador Interno" : "Cliente Web SneakerHub",
+        nombre_cliente: nombreUsuario || "Cliente Web SneakerHub",
         detalles: carrito.map(item => ({
           producto_id: item.id,
           talla: item.talla,
@@ -195,7 +188,7 @@ export default function App() {
 
       await API.post('/pedidos/', pedidoPayload);
 
-      const CELULAR_TIENDA = "51999999999"; 
+      const CELULAR_TIENDA = "51900169073"; 
       let mensaje = `🚨 *¡Hola SneakerHub Ayacucho!* \n`;
       mensaje += `Quiero realizar un pedido con el siguiente detalle:\n\n`;
       carrito.forEach((item) => {
@@ -213,15 +206,16 @@ export default function App() {
 
   if (validandoSesion) return <div className="min-h-screen bg-neutral-50 flex items-center justify-center font-sans"><p className="text-xs font-black tracking-widest text-neutral-400 animate-pulse">Verificando Credenciales...</p></div>;
   
-  // Interfaz de login adaptada para inyectar token y rol de golpe
   if (mostrarLogin) return (
     <div className="relative">
       <button onClick={() => setMostrarLogin(false)} className="absolute top-4 left-4 bg-white/10 text-white font-bold text-xs px-4 py-2 rounded-xl border border-gray-700 z-50 cursor-pointer">← Volver al Catálogo</button>
-      <Login onLoginSuccess={(t, r) => {
+      <Login onLoginSuccess={(t, r, n) => {
         localStorage.setItem('token', t);
         localStorage.setItem('rol', r);
+        localStorage.setItem('nombre_usuario', n); // 🌟 Guardado HU-06
         setToken(t);
         setRol(r);
+        setNombreUsuario(n);
         setMostrarLogin(false);
       }} />
     </div>
@@ -230,12 +224,11 @@ export default function App() {
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans antialiased">
       
-      {/* 🌟 BARRA SUPERIOR EXCLUSIVA PARA EL ADMINISTRADOR */}
       {token && rol === 'admin' && (
         <div className="bg-emerald-600 text-white text-xs font-bold py-2 px-4 flex justify-between items-center animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-300 animate-pulse"></span>
-            <span>🛡️ Panel Administrativo (Paul)</span>
+            <span>🛡️ Panel Administrativo ({nombreUsuario})</span>
             <button onClick={() => setModalFormularioAbierto(true)} className="bg-white text-emerald-800 px-3 py-1 rounded-lg text-[11px] font-black hover:bg-neutral-100 cursor-pointer uppercase">+ Añadir Zapatilla</button>
             <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-neutral-950 text-white'}`}>{verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}</button>
             <button onClick={() => setModalPedidosAbierto(true)} className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer">📋 Historial de Pedidos</button>
@@ -248,7 +241,15 @@ export default function App() {
       <header className="bg-white border-b border-neutral-200 sticky top-0 z-40 px-4 py-4 shadow-2xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <h1 className="text-xl font-black tracking-tight uppercase">SneakerHub <span className="text-neutral-400 font-normal text-sm">Ayacucho</span></h1>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            
+            {/* 🌟 Criterio de Aceptación 3: Visualizar el saludo personalizado con el nombre */}
+            {token && (
+              <span className="text-xs font-bold text-neutral-600">
+                👋 Hola, <b className="text-neutral-900 font-black">{nombreUsuario}</b>
+              </span>
+            )}
+
             {!token ? (
               <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer">Ingresar 🔐</button>
             ) : (
@@ -257,7 +258,7 @@ export default function App() {
                   {rol === 'admin' ? "Panel Activo" : "Cliente Activo"}
                 </span>
                 {rol !== 'admin' && (
-                  <button onClick={handleLogout} className="text-neutral-500 hover:text-red-600 font-bold text-xs px-2 py-1">Salir</button>
+                  <button onClick={handleLogout} className="text-neutral-400 hover:text-red-600 font-bold text-xs px-2 py-1 cursor-pointer transition-colors">Salir</button>
                 )}
               </div>
             )}
@@ -302,7 +303,6 @@ export default function App() {
                 key={producto.id} 
                 producto={producto} 
                 alSeleccionar={(p) => { setProductoSeleccionado(p); setTallaSeleccionada(''); }} 
-                // 🌟 INYECCIÓN CONDICIONAL: Solo otorga funciones de mutación si es admin legítimo
                 onEditarStock={rol === 'admin' ? (p) => setProductoParaStock(p) : null} 
                 onOcultarProducto={rol === 'admin' ? handleOcultarProducto : null} 
                 onActivarProducto={rol === 'admin' ? handleActivarProducto : null} 
@@ -358,9 +358,9 @@ export default function App() {
                         <h4 className="text-sm font-bold text-neutral-900 line-clamp-1">{item.nombre}</h4>
                         <p className="text-sm font-black text-neutral-900 mt-1">S/. {(Number(item.precio) * Number(item.cantidad)).toFixed(2)}</p>
                         <div className="flex items-center gap-2.5 mt-2">
-                          <button type="button" onClick={() => modificarCantidad(item.id, item.talla, -1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer hover:bg-neutral-200 text-neutral-800 transition-all">-</button>
+                          <button type="button" onClick={() => modificarCantidad(item.id, item.talla, -1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer hover:bg-neutral-200 text-neutral-400 transition-all">-</button>
                           <span className="text-xs font-black text-neutral-900 w-5 text-center inline-block">{item.cantidad}</span>
-                          <button type="button" onClick={() => modificarCantidad(item.id, item.talla, 1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer hover:bg-neutral-200 text-neutral-800 transition-all">+</button>
+                          <button type="button" onClick={() => modificarCantidad(item.id, item.talla, 1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer hover:bg-neutral-200 text-neutral-400 transition-all">+</button>
                         </div>
                       </div>
                       <button type="button" onClick={() => setCarrito(carrito.filter(i => !(i.id === item.id && i.talla === item.talla)))} className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold cursor-pointer">✕</button>
@@ -458,7 +458,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALES ADMINISTRATIVOS PROTEGIDOS VISUALMENTE */}
       {modalFormularioAbierto && rol === 'admin' && <FormularioProducto alCerrar={() => setModalFormularioAbierto(false)} onProductoRegistrado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
       {productoParaStock && rol === 'admin' && <ModalEditarStock producto={productoParaStock} alCerrar={() => setProductoParaStock(null)} onStockActualizado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
 

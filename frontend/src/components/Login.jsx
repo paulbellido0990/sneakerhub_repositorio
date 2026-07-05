@@ -2,37 +2,57 @@ import React, { useState } from 'react';
 import API from '../api';
 
 export default function Login({ onLoginSuccess }) {
+  const [esRegistro, setEsRegistro] = useState(false); // Alternador de pestañas
+  const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [telefono, setTelefono] = useState('');
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleLogin = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
-      setError("Por favor, completa todos los campos.");
+    setError(null);
+
+    if (!email || !password || (esRegistro && (!nombre || !telefono))) {
+      setError("Por favor, completa todos los campos del formulario.");
       return;
     }
 
+    // 🌟 Criterio de Aceptación 2: Validación por Regex en el Cliente (Exactamente 9 dígitos)
+    if (esRegistro) {
+      const regexTelefono = /^\d{9}$/;
+      if (!regexTelefono.test(telefono)) {
+        setError("El número telefónico debe contener exactamente 9 dígitos numéricos.");
+        return;
+      }
+    }
+
     setCargando(true);
-    setError(null);
 
     try {
-      // Petición al endpoint de autenticación que actualizamos en FastAPI
-      const response = await API.post('/auth/login', {
-        email: email,
-        password: password
-      });
-
-      // 🌟 CLAVE: Extraemos tanto el access_token como el rol del backend
-      const { access_token, rol } = response.data;
-
-      // Se los inyectamos al App.jsx para mapear la UI al instante
-      onLoginSuccess(access_token, rol);
-
+      if (esRegistro) {
+        // Petición al endpoint de registro
+        const response = await API.post('/auth/register', {
+          nombre,
+          email,
+          password,
+          telefono
+        });
+        const { access_token, rol, nombre: nameRes } = response.data;
+        onLoginSuccess(access_token, rol, nameRes);
+      } else {
+        // Petición al endpoint de login
+        const response = await API.post('/auth/login', {
+          email,
+          password
+        });
+        const { access_token, rol, nombre: nameRes } = response.data;
+        onLoginSuccess(access_token, rol, nameRes);
+      }
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || "Error crítico de autenticación.");
+      setError(err.response?.data?.detail || "Sucedió un error crítico en el servidor.");
     } finally {
       setCargando(false);
     }
@@ -40,25 +60,59 @@ export default function Login({ onLoginSuccess }) {
 
   return (
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 font-sans antialiased">
-      <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl space-y-6">
+      <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200">
         
         {/* LOGO / ENCABEZADO */}
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-1">
           <h2 className="text-2xl font-black text-white uppercase tracking-tight">
-            SneakerHub <span className="text-neutral-500 font-medium text-xs block tracking-widest mt-1">Credenciales de Acceso</span>
+            SneakerHub
           </h2>
-          <p className="text-xs text-neutral-400">Ingresa para interactuar con la plataforma relacional</p>
+          <p className="text-xs text-neutral-400">
+            {esRegistro ? "Crea una cuenta para guardar tu historial" : "Ingresa para interactuar con la plataforma relacional"}
+          </p>
         </div>
 
-        {/* FEEDBACK DE ERROR BIEN VISIBLE */}
+        {/* SELECTOR DE PESTAÑAS */}
+        <div className="grid grid-cols-2 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+          <button 
+            type="button"
+            onClick={() => { setEsRegistro(false); setError(null); }}
+            className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${!esRegistro ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-white'}`}
+          >
+            Iniciar Sesión
+          </button>
+          <button 
+            type="button"
+            onClick={() => { setEsRegistro(true); setError(null); }}
+            className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${esRegistro ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-white'}`}
+          >
+            Registrarse
+          </button>
+        </div>
+
+        {/* FEEDBACK DE ERROR */}
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold p-3.5 rounded-xl text-center">
             ⚠️ {error}
           </div>
         )}
 
-        {/* FORMULARIO DE INGRESO */}
-        <form onSubmit={handleLogin} className="space-y-4">
+        {/* FORMULARIO ÚNICO ADAPTATIVO */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          
+          {esRegistro && (
+            <div className="flex flex-col gap-1.5 animate-in slide-in-from-top-2 duration-100">
+              <label className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">Nombre Completo</label>
+              <input 
+                type="text" 
+                placeholder="Paul Llallahui"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-700"
+              />
+            </div>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">Correo Electrónico</label>
             <input 
@@ -66,18 +120,32 @@ export default function Login({ onLoginSuccess }) {
               placeholder="ejemplo@sneakerhub.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-600"
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-700"
             />
           </div>
 
+          {esRegistro && (
+            <div className="flex flex-col gap-1.5 animate-in slide-in-from-top-2 duration-100">
+              <label className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">Celular (Ayacucho Delivery)</label>
+              <input 
+                type="text" 
+                maxLength="9"
+                placeholder="9XXXXXXXX (9 dígitos)"
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-700 font-mono"
+              />
+            </div>
+          )}
+
           <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">Contraseña Segura</label>
+            <label className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">Contraseña de Seguridad</label>
             <input 
               type="password" 
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-600"
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-700"
             />
           </div>
 
@@ -86,7 +154,7 @@ export default function Login({ onLoginSuccess }) {
             disabled={cargando}
             className={`w-full font-bold text-xs py-3.5 rounded-xl text-black bg-white hover:bg-neutral-200 uppercase tracking-widest transition-all cursor-pointer ${cargando ? 'opacity-50 cursor-not-allowed animate-pulse' : ''}`}
           >
-            {cargando ? "Autenticando..." : "Entrar al Sistema →"}
+            {cargando ? "Procesando..." : esRegistro ? "Crear Cuenta de Cliente" : "Entrar al Sistema →"}
           </button>
         </form>
 

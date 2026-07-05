@@ -4,15 +4,11 @@ from app.database import Base
 from datetime import datetime
 
 # =============================================================================
-# 🔐 1. MODELO DE AUTENTICACIÓN: usuarios_admin (BLINDADO)
+# 🔐 1. MODELO DE AUTENTICACIÓN: usuarios_admin (ACTUALIZADO HU-06)
 # =============================================================================
 class UsuarioAdmin(Base):
-    """
-    Mapeo relacional de la tabla 'usuarios_admin'.
-    Usa 'extend_existing' para evitar colisiones si ya fue declarada en otro modelo.
-    """
     __tablename__ = 'usuarios_admin'
-    __table_args__ = {'extend_existing': True} # 🌟 SOLUCIÓN: Reutiliza la definición si ya existe
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     nombre = Column(String(100), nullable=False)
@@ -20,6 +16,7 @@ class UsuarioAdmin(Base):
     contrasena_hash = Column(String(255), nullable=False)
     fecha_creacion = Column(TIMESTAMP, server_default=text('CURRENT_TIMESTAMP'))
     rol = Column(String(20), nullable=False, default='cliente')
+    telefono = Column(String(9), nullable=True) # 🌟 NUEVO: Soporte para contacto de clientes
 
 
 # =============================================================================
@@ -27,7 +24,7 @@ class UsuarioAdmin(Base):
 # =============================================================================
 class Pedido(Base):
     __tablename__ = 'pedidos'
-    __table_args__ = {'extend_existing': True} # 🌟 Protegido contra re-importaciones
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     fecha_pedido = Column(DateTime, default=datetime.utcnow)
@@ -43,7 +40,7 @@ class Pedido(Base):
 # =============================================================================
 class DetallePedido(Base):
     __tablename__ = 'detalles_pedido'
-    __table_args__ = {'extend_existing': True} # 🌟 Protegido contra re-importaciones
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     pedido_id = Column(Integer, ForeignKey('pedidos.id', ondelete="CASCADE"), nullable=False)

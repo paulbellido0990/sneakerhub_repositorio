@@ -1,21 +1,19 @@
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-import bcrypt  # 🌟 SOLUCIÓN: Usamos el motor nativo directamente sin pasar por passlib
+import bcrypt
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.order import UsuarioAdmin 
 
-# =============================================================================
-# 🔐 CONFIGURACIÓN DE SEGURIDAD GLOBAL (JWT)
-# =============================================================================
 SECRET_KEY = "SNEAKERHUB_AYACUCHO_SECRET_KEY_2026_MIGRATION"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 días de sesión activa
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
@@ -31,31 +29,28 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class UserRegister(BaseModel):
+    nombre: str
+    email: EmailStr
+    password: str
+    telefono: str # 🌟 Campo obligatorio para clientes
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     rol: str
+    nombre: str # 🌟 Retornamos el nombre para el encabezado de la UI
 
 # =============================================================================
-# 🛠️ FUNCIONES UTILITARIAS DE CIFRADO NATIVO (REFACTORIZADO)
+# 🛠️ UTILS
 # =============================================================================
 def verificar_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Compara la contraseña en texto plano con el hash de la base de datos.
-    Bcrypt exige que ambos strings se transformen a bytes (.encode('utf-8')).
-    """
     try:
-        return bcrypt.checkpw(
-            plain_password.encode('utf-8'), 
-            hashed_password.encode('utf-8')
-        )
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception:
         return False
 
 def obtener_password_hash(password: str) -> str:
-    """
-    Genera un salt seguro y encripta la contraseña regresando un string limpio.
-    """
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
@@ -69,11 +64,60 @@ def crear_access_token(data: dict, expires_delta: Optional[timedelta] = None) ->
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 # =============================================================================
-# 🚪 ENDPOINT: INICIO DE SESIÓN
+# ➕ ENDPOINT: REGISTRO PÚBLICO DE CLIENTES (HU-06)
 # =============================================================================
-@router.post("/login", response_model=TokenResponse, summary="Autenticar usuario y proveer JWT con Rol")
+@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, summary="Registro síncrono de clientes con validación Regex")
+def registrar_cliente(payload: UserRegister, db: Session = Depends(get_db)):
+    """
+    Registra un cliente validando de forma síncrona que el correo sea único
+    y que el teléfono cumpla estrictamente con la expresión regular de 9 dígitos.
+    """
+    # 1. Criterio de Aceptación 1: Validación síncrona de Correo Único
+    correo_existente = db.query(UsuarioAdmin).filter(UsuarioAdmin.correo == payload.email).first()
+    if correo_existente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Error: El correo electrónico ya se encuentra registrado en la plataforma."
+        )
+
+    # 2. Criterio de Aceptación 2: Validación por Expresión Regular (Regex) de exactamente 9 dígitos
+    # Admite exactamente 9 números del 0 al 9
+    regex_telefono = r"^\d{9}$"
+    if not re.match(regex_telefono, payload.telefono):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Error formativo: El campo telefónico debe contener exactamente 9 dígitos numéricos."
+        )
+
+    # 3. Guardado seguro con Hash e inyección del rol 'cliente' por defecto
+    nuevo_cliente = UsuarioAdmin(
+        nombre=payload.nombre,
+        correo=payload.email,
+        contrasena_hash=obtener_password_hash(payload.password),
+        telefono=payload.telefono,
+        rol="cliente" # 🛡️ Forzado a rol cliente por seguridad perimetral
+    )
+    
+    db.add(nuevo_cliente)
+    db.commit()
+    db.refresh(nuevo_cliente)
+
+    # Autenticación automática tras un registro exitoso
+    token_payload = {"sub": nuevo_cliente.correo, "rol": nuevo_cliente.rol, "id": nuevo_cliente.id}
+    access_token = crear_access_token(data=token_payload)
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "rol": nuevo_cliente.rol,
+        "nombre": nuevo_cliente.nombre
+    }
+
+# =============================================================================
+# 🚪 ENDPOINT: INICIO DE SESIÓN (ACTUALIZADO CON RETORNO DE NOMBRE)
+# =============================================================================
+@router.post("/login", response_model=TokenResponse)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
-    # Consulta usando la columna real detectada en tu MySQL ('correo')
     user = db.query(UsuarioAdmin).filter(UsuarioAdmin.correo == payload.email).first()
     
     if not user or not verificar_password(payload.password, user.contrasena_hash):
@@ -82,19 +126,14 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
             detail="El correo electrónico o la contraseña son incorrectos."
         )
     
-    # Payload seguro del JWT
-    token_payload = {
-        "sub": user.correo,
-        "rol": user.rol,
-        "id": user.id
-    }
-    
+    token_payload = {"sub": user.correo, "rol": user.rol, "id": user.id}
     access_token = crear_access_token(data=token_payload)
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "rol": user.rol
+        "rol": user.rol,
+        "nombre": user.nombre # Envia el nombre para guardarlo en los estados de React
     }
 
 # =============================================================================
@@ -120,6 +159,5 @@ def verificar_admin(token: str = Depends(oauth2_scheme)):
             )
             
         return payload
-        
     except JWTError:
         raise credentials_exception
