@@ -27,7 +27,7 @@ export default function App() {
   const [cargandoPedidos, setCargandoPedidos] = useState(false);
   const [pedidoExpandido, setPedidoExpandido] = useState(null);
 
-  // 📉 ESTADOS DE TELEMETRÍA DE BAJO STOCK (HU-08)
+  // 📈 ESTADOS DE TELEMETRÍA DE BAJO STOCK (HU-08)
   const [modalReportesAbierto, setModalReportesAbierto] = useState(false);
   const [reportesBajoStock, setReportesBajoStock] = useState([]);
   const [cargandoReportes, setCargandoReportes] = useState(false);
@@ -139,7 +139,6 @@ export default function App() {
     }
   }, [modalReportesAbierto, rol]);
 
-  // 🌟 CONSUMO ASÍNCRONO ENDPOINT PROTEGIDO (HU-11)
   useEffect(() => {
     if (modalMisPedidosAbierto && token) {
       setCargandoMisPedidos(true);
@@ -251,6 +250,20 @@ export default function App() {
     }
   };
 
+  // 🌟 MUTACIÓN EN CALIENTE DE ESTADOS (HU-12)
+  const handleCambiarEstadoPedido = async (pedidoId, nuevoEstado) => {
+    const tokenGuardado = localStorage.getItem('token');
+    try {
+      await API.put(`/pedidos/${pedidoId}/estado`, { estado: nuevoEstado }, {
+        headers: { Authorization: `Bearer ${tokenGuardado}` }
+      });
+      // Sincronizamos el estado local instantáneamente sin necesidad de re-consultar la base de datos
+      setPedidos((prev) => prev.map(p => p.id === pedidoId ? { ...p, estado: nuevoEstado } : p));
+    } catch (err) {
+      alert(`Error al actualizar estado: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
   const marcasReporte = Array.isArray(reportesBajoStock) 
     ? [...new Set(reportesBajoStock.map(item => item?.marca).filter(Boolean))]
     : [];
@@ -304,7 +317,6 @@ export default function App() {
               </span>
             )}
             
-            {/* 🌟 ENLACE OPERATIVO EXCLUSIVO CLIENTE (HU-11) */}
             {token && rol !== 'admin' && (
               <button onClick={() => setModalMisPedidosAbierto(true)} className="border border-neutral-200 text-neutral-700 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer transition-colors">📋 Mis Compras</button>
             )}
@@ -433,14 +445,14 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN) */}
+      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN - ACTUALIZADO HU-12 CON COMBOBOX CONTROLADO) */}
       {modalPedidosAbierto && rol === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-neutral-200 pb-4 mb-4">
               <div>
                 <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900">📈 Auditoría Transaccional de Ventas</h3>
-                <p className="text-xs text-neutral-400">Haz clic en cualquier pedido para desplegar las zapatillas compradas</p>
+                <p className="text-xs text-neutral-400">Cambia el estado en el selector para actualizar al cliente en tiempo real</p>
               </div>
               <button onClick={() => setModalPedidosAbierto(false)} className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
@@ -458,7 +470,8 @@ export default function App() {
                         <th className="px-4 py-3">Fecha y Hora</th>
                         <th className="px-4 py-3">Cliente</th>
                         <th className="px-4 py-3 text-center">Volumen</th>
-                        <th className="px-4 py-3">Estado</th>
+                        {/* 🌟 HU-12: El encabezado ahora indica Gestión de Flujo */}
+                        <th className="px-4 py-3">Gestión de Estado</th>
                         <th className="px-4 py-3 text-right">Total</th>
                         <th className="px-4 py-3 text-center">Acción</th>
                       </tr>
@@ -473,7 +486,27 @@ export default function App() {
                               <td className="px-4 py-3.5 text-neutral-500">{new Date(order.fecha_pedido).toLocaleString('es-PE')}</td>
                               <td className="px-4 py-3.5 font-bold text-neutral-900">{order.nombre_cliente}</td>
                               <td className="px-4 py-3.5 text-center font-bold text-neutral-500 bg-neutral-50/30">{order.detalles?.reduce((sum, d) => sum + d.cantidad, 0)} u.</td>
-                              <td className="px-4 py-3.5"><span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2 py-1 rounded-md border border-amber-200">{order.estado}</span></td>
+                              
+                              {/* 🌟 HU-12 INTEGRADO: Dropdown interactivo con stopPropagation perimetral */}
+                              <td className="px-4 py-3.5">
+                                <select
+                                  value={order.estado}
+                                  onClick={(e) => e.stopPropagation()} // 🛡️ Evita colapsar la fila al interactuar
+                                  onChange={(e) => handleCambiarEstadoPedido(order.id, e.target.value)}
+                                  className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg border cursor-pointer focus:outline-none transition-all ${
+                                    order.estado === 'PENDIENTE' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                                    order.estado === 'CONFIRMADO' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                    order.estado === 'ENVIADO' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' :
+                                    'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                  }`}
+                                >
+                                  <option value="PENDIENTE">⏳ PENDIENTE</option>
+                                  <option value="CONFIRMADO">✅ CONFIRMADO</option>
+                                  <option value="ENVIADO">🚚 ENVIADO</option>
+                                  <option value="ENTREGADO">📦 ENTREGADO</option>
+                                </select>
+                              </td>
+
                               <td className="px-4 py-3.5 text-right font-black text-neutral-900 text-sm">S/. {parseFloat(order.total).toFixed(2)}</td>
                               <td className="px-4 py-3.5 text-center"><button type="button" className="text-blue-600 font-bold text-xs hover:underline">{estaAbierto ? "🙈 Cerrar" : "👁️ Detalles"}</button></td>
                             </tr>
@@ -568,11 +601,10 @@ export default function App() {
         </div>
       )}
 
-      {/* 🌟 VISTA INTEGRADAS DEL MODAL: HISTORIAL PROPIO DE COMPRAS (HU-11 EXCLUSIVO CLIENTE) */}
+      {/* VISTA DEL MODAL: HISTORIAL PROPIO DE COMPRAS (CLIENTE) */}
       {modalMisPedidosAbierto && token && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[80vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
-            
             <div className="flex items-center justify-between border-b border-neutral-200 pb-4 mb-4">
               <div>
                 <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">📦 Mi Historial de Compras</h3>
@@ -580,7 +612,6 @@ export default function App() {
               </div>
               <button onClick={() => setModalMisPedidosAbierto(false)} className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
-
             <div className="grow overflow-y-auto">
               {cargandoMisPedidos ? (
                 <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Sincronizando tus transacciones con MySQL...</p>
@@ -595,7 +626,6 @@ export default function App() {
                     const estaAbierto = miPedidoExpandido === pedido.id;
                     return (
                       <div key={pedido.id} className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-3xs transition-all">
-                        {/* Cabecera del Item de Pedido */}
                         <div 
                           onClick={() => setMiPedidoExpandido(estaAbierto ? null : pedido.id)}
                           className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-neutral-50/80 transition-colors ${estaAbierto ? 'bg-neutral-50/50' : ''}`}
@@ -609,7 +639,12 @@ export default function App() {
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-6 border-t sm:border-t-0 pt-2 sm:pt-0">
                             <div>
-                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md border ${
+                                pedido.estado === 'PENDIENTE' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                                pedido.estado === 'CONFIRMADO' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                pedido.estado === 'ENVIADO' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' :
+                                'bg-emerald-100 text-emerald-800 border-emerald-200'
+                              }`}>
                                 {pedido.estado}
                               </span>
                             </div>
@@ -619,17 +654,13 @@ export default function App() {
                             </div>
                           </div>
                         </div>
-
-                        {/* Desglose Desplegable de Zapatillas */}
                         {estaAbierto && (
                           <div className="bg-neutral-50/50 p-4 border-t border-neutral-200 divide-y divide-neutral-200/60 animate-in fade-in duration-150">
                             <p className="text-[10px] font-black uppercase text-neutral-400 tracking-wider mb-2">👟 Calzado Facturado:</p>
                             {pedido.detalles?.map((det) => (
                               <div key={det.id} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 first:pt-0 last:pb-0">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-black text-neutral-900 uppercase tracking-tight">
-                                    {det.producto?.nombre || "Modelo Premium SneakerHub"}
-                                  </span>
+                                  <span className="font-black text-neutral-900 uppercase tracking-tight">{det.producto?.nombre || "Modelo Premium SneakerHub"}</span>
                                   <span className="bg-white border text-neutral-600 font-bold px-1.5 py-0.5 rounded-md text-[10px]">Talla {det.talla}</span>
                                 </div>
                                 <div className="flex justify-between sm:justify-end gap-6 text-neutral-500">
@@ -647,11 +678,7 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            <div className="border-t border-neutral-100 pt-3 mt-4 text-center">
-              <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">¡Gracias por confiar en SneakerHub Ayacucho! S/. Pen</p>
-            </div>
-
+            <div className="border-t border-neutral-100 pt-3 mt-4 text-center"><p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">¡Gracias por confiar en SneakerHub Ayacucho! S/. Pen</p></div>
           </div>
         </div>
       )}
