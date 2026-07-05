@@ -33,13 +33,13 @@ class UserRegister(BaseModel):
     nombre: str
     email: EmailStr
     password: str
-    telefono: str # 🌟 Campo obligatorio para clientes
+    telefono: str 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     rol: str
-    nombre: str # 🌟 Retornamos el nombre para el encabezado de la UI
+    nombre: str 
 
 # =============================================================================
 # 🛠️ UTILS
@@ -68,11 +68,6 @@ def crear_access_token(data: dict, expires_delta: Optional[timedelta] = None) ->
 # =============================================================================
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, summary="Registro síncrono de clientes con validación Regex")
 def registrar_cliente(payload: UserRegister, db: Session = Depends(get_db)):
-    """
-    Registra un cliente validando de forma síncrona que el correo sea único
-    y que el teléfono cumpla estrictamente con la expresión regular de 9 dígitos.
-    """
-    # 1. Criterio de Aceptación 1: Validación síncrona de Correo Único
     correo_existente = db.query(UsuarioAdmin).filter(UsuarioAdmin.correo == payload.email).first()
     if correo_existente:
         raise HTTPException(
@@ -80,8 +75,6 @@ def registrar_cliente(payload: UserRegister, db: Session = Depends(get_db)):
             detail="Error: El correo electrónico ya se encuentra registrado en la plataforma."
         )
 
-    # 2. Criterio de Aceptación 2: Validación por Expresión Regular (Regex) de exactamente 9 dígitos
-    # Admite exactamente 9 números del 0 al 9
     regex_telefono = r"^\d{9}$"
     if not re.match(regex_telefono, payload.telefono):
         raise HTTPException(
@@ -89,20 +82,18 @@ def registrar_cliente(payload: UserRegister, db: Session = Depends(get_db)):
             detail="Error formativo: El campo telefónico debe contener exactamente 9 dígitos numéricos."
         )
 
-    # 3. Guardado seguro con Hash e inyección del rol 'cliente' por defecto
     nuevo_cliente = UsuarioAdmin(
         nombre=payload.nombre,
         correo=payload.email,
         contrasena_hash=obtener_password_hash(payload.password),
         telefono=payload.telefono,
-        rol="cliente" # 🛡️ Forzado a rol cliente por seguridad perimetral
+        rol="cliente" 
     )
     
     db.add(nuevo_cliente)
     db.commit()
     db.refresh(nuevo_cliente)
 
-    # Autenticación automática tras un registro exitoso
     token_payload = {"sub": nuevo_cliente.correo, "rol": nuevo_cliente.rol, "id": nuevo_cliente.id}
     access_token = crear_access_token(data=token_payload)
 
@@ -114,7 +105,7 @@ def registrar_cliente(payload: UserRegister, db: Session = Depends(get_db)):
     }
 
 # =============================================================================
-# 🚪 ENDPOINT: INICIO DE SESIÓN (ACTUALIZADO CON RETORNO DE NOMBRE)
+# 🚪 ENDPOINT: INICIO DE SESIÓN
 # =============================================================================
 @router.post("/login", response_model=TokenResponse)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
@@ -133,11 +124,11 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
         "access_token": access_token,
         "token_type": "bearer",
         "rol": user.rol,
-        "nombre": user.nombre # Envia el nombre para guardarlo en los estados de React
+        "nombre": user.nombre 
     }
 
 # =============================================================================
-# 🛡️ GUARDIÁN DE SEGURIDAD
+# 🛡️ GUARDIANES DE SEGURIDAD INDEPENDIENTES (MIGRACIÓN V6.0)
 # =============================================================================
 def verificar_admin(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
@@ -149,15 +140,32 @@ def verificar_admin(token: str = Depends(oauth2_scheme)):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         rol: str = payload.get("rol")
         
-        if rol is None:
-            raise credentials_exception
-            
-        if rol != "admin":
+        if rol is None or rol != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Acceso denegado: Se requieren privilegios de Administrador."
             )
-            
         return payload
     except JWTError:
         raise credentials_exception
+
+# 🌟 NUEVO: Guardián perimetral elástico para cualquier usuario autenticado (HU-11)
+def verificar_usuario(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Sesión inválida o expirada. Por favor, vuelva a iniciar sesión.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub") # El correo almacenado en 'sub'
+        if email is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    # Buscamos el registro del cliente en la base de datos
+    usuario = db.query(UsuarioAdmin).filter(UsuarioAdmin.correo == email).first()
+    if usuario is None:
+        raise credentials_exception
+    return usuario # Retorna el objeto de base de datos completo

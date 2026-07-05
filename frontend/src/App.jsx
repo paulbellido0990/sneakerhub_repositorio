@@ -27,11 +27,17 @@ export default function App() {
   const [cargandoPedidos, setCargandoPedidos] = useState(false);
   const [pedidoExpandido, setPedidoExpandido] = useState(null);
 
-  // 📈 ESTADOS DE TELEMETRÍA DE BAJO STOCK (HU-08)
+  // 📉 ESTADOS DE TELEMETRÍA DE BAJO STOCK (HU-08)
   const [modalReportesAbierto, setModalReportesAbierto] = useState(false);
   const [reportesBajoStock, setReportesBajoStock] = useState([]);
   const [cargandoReportes, setCargandoReportes] = useState(false);
   const [marcaFiltroReporte, setMarcaFiltroReporte] = useState('');
+
+  // 🛍️ ESTADOS HISTORIAL DE PEDIDOS CLIENTE (HU-11)
+  const [modalMisPedidosAbierto, setModalMisPedidosAbierto] = useState(false);
+  const [misPedidos, setMisPedidos] = useState([]);
+  const [cargandoMisPedidos, setCargandoMisPedidos] = useState(false);
+  const [miPedidoExpandido, setMiPedidoExpandido] = useState(null);
 
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
@@ -133,6 +139,24 @@ export default function App() {
     }
   }, [modalReportesAbierto, rol]);
 
+  // 🌟 CONSUMO ASÍNCRONO ENDPOINT PROTEGIDO (HU-11)
+  useEffect(() => {
+    if (modalMisPedidosAbierto && token) {
+      setCargandoMisPedidos(true);
+      setMiPedidoExpandido(null);
+      const tokenGuardado = localStorage.getItem('token');
+      API.get('/pedidos/mis-pedidos', { headers: { Authorization: `Bearer ${tokenGuardado}` } })
+        .then((res) => {
+          setMisPedidos(res.data);
+          setCargandoMisPedidos(false);
+        })
+        .catch((err) => {
+          console.error("Fallo al sincronizar historial propio:", err);
+          setCargandoMisPedidos(false);
+        });
+    }
+  }, [modalMisPedidosAbierto, token]);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('rol');
@@ -142,6 +166,7 @@ export default function App() {
     setNombreUsuario(null);
     setModalPedidosAbierto(false);
     setModalReportesAbierto(false);
+    setModalMisPedidosAbierto(false);
   };
 
   const handleOcultarProducto = async (id) => {
@@ -278,13 +303,16 @@ export default function App() {
                 👋 Hola, <b className="text-neutral-900 font-black">{nombreUsuario}</b>
               </span>
             )}
+            
+            {/* 🌟 ENLACE OPERATIVO EXCLUSIVO CLIENTE (HU-11) */}
+            {token && rol !== 'admin' && (
+              <button onClick={() => setModalMisPedidosAbierto(true)} className="border border-neutral-200 text-neutral-700 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer transition-colors">📋 Mis Compras</button>
+            )}
+
             {!token ? (
               <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer">Ingresar 🔐</button>
             ) : (
               <div className="flex items-center gap-2">
-                <span className={`text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl border ${rol === 'admin' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-blue-100 text-blue-800 border-blue-200'}`}>
-                  {rol === 'admin' ? "Panel Activo" : "Cliente Activo"}
-                </span>
                 {rol !== 'admin' && (
                   <button onClick={handleLogout} className="text-neutral-400 hover:text-red-600 font-bold text-xs px-2 py-1 cursor-pointer transition-colors">Salir</button>
                 )}
@@ -306,7 +334,6 @@ export default function App() {
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">Filtrar por tu Talla</label>
             <select value={tallaFiltro} onChange={(e) => setTallaFiltro(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none cursor-pointer">
               <option value="">Todas las tallas disponibles</option>
-              {/* 🌟 FILTRO HOMOLOGADO COMPLETO DESDE LA 35 HASTA LA 44 */}
               {["35", "36", "37", "38", "39", "40", "41", "42", "43", "44"].map(t => <option key={t} value={t}>Talla {t}</option>)}
             </select>
           </div>
@@ -406,7 +433,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: AUDITORÍA DE PEDIDOS */}
+      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN) */}
       {modalPedidosAbierto && rol === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
@@ -490,29 +517,20 @@ export default function App() {
       {modalReportesAbierto && rol === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[80vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
-            
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200 pb-4 mb-4">
               <div>
-                <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">
-                  🚨 Telemetría de Rotura de Stock
-                </h3>
+                <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">🚨 Telemetría de Rotura de Stock</h3>
                 <p className="text-xs text-neutral-400">Variantes con inventario crítico menor o igual a 2 unidades para reposición</p>
               </div>
               <button onClick={() => setModalReportesAbierto(false)} className="self-end sm:self-center bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
-
             <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200 flex items-center gap-3 mb-4">
               <label className="text-[10px] font-black uppercase tracking-wider text-neutral-500">Filtrar por Marca Fabricante:</label>
-              <select 
-                value={marcaFiltroReporte} 
-                onChange={(e) => setMarcaFiltroReporte(e.target.value)}
-                className="bg-white border border-neutral-200 rounded-lg text-xs font-bold py-1 px-2.5 focus:outline-none cursor-pointer text-neutral-800"
-              >
+              <select value={marcaFiltroReporte} onChange={(e) => setMarcaFiltroReporte(e.target.value)} className="bg-white border border-neutral-200 rounded-lg text-xs font-bold py-1 px-2.5 focus:outline-none cursor-pointer text-neutral-800">
                 <option value="">Todas las marcas globales</option>
                 {marcasReporte.map(brand => <option key={brand} value={brand}>{brand}</option>)}
               </select>
             </div>
-
             <div className="grow overflow-y-auto">
               {cargandoReportes ? (
                 <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Ejecutando agregación en MySQL...</p>
@@ -535,15 +553,9 @@ export default function App() {
                         <tr key={item.talla_id} className={`transition-colors ${item.stock === 0 ? 'bg-red-50/60 font-black text-red-600' : 'bg-amber-50/30 text-amber-900'}`}>
                           <td className="px-4 py-3 font-black uppercase tracking-tight text-[11px]">{item.marca}</td>
                           <td className="px-4 py-3 font-medium">{item.nombre}</td>
-                          
-                          <td className="px-4 py-3 text-neutral-500">
-                            {typeof item?.color === 'object' ? (item?.color?.nombre || "Estándar") : (item?.color || "Estándar")}
-                          </td>
-                          
+                          <td className="px-4 py-3 text-neutral-500">{typeof item?.color === 'object' ? (item?.color?.nombre || "Estándar") : (item?.color || "Estándar")}</td>
                           <td className="px-4 py-3 text-center font-mono font-bold">US {item.talla}</td>
-                          <td className="px-4 py-3 text-center font-black bg-red-100/40 text-red-600 border-l border-red-200 text-sm">
-                            {item.stock} u. {item.stock === 0 ? '🚫 AGOTADO' : '⚠️'}
-                          </td>
+                          <td className="px-4 py-3 text-center font-black bg-red-100/40 text-red-600 border-l border-red-200 text-sm">{item.stock} u. {item.stock === 0 ? '🚫 AGOTADO' : '⚠️'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -551,9 +563,93 @@ export default function App() {
                 </div>
               )}
             </div>
+            <div className="border-t border-neutral-100 pt-3 mt-4 text-right"><span className="text-[10px] text-neutral-400 font-bold uppercase font-mono">Telemetría Activa de Almacén</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 VISTA INTEGRADAS DEL MODAL: HISTORIAL PROPIO DE COMPRAS (HU-11 EXCLUSIVO CLIENTE) */}
+      {modalMisPedidosAbierto && token && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[80vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
             
-            <div className="border-t border-neutral-100 pt-3 mt-4 text-right">
-              <span className="text-[10px] text-neutral-400 font-bold uppercase font-mono">Telemetría Activa de Almacén</span>
+            <div className="flex items-center justify-between border-b border-neutral-200 pb-4 mb-4">
+              <div>
+                <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">📦 Mi Historial de Compras</h3>
+                <p className="text-xs text-neutral-400">Consulta tus pedidos registrados y su estado actual en tienda</p>
+              </div>
+              <button onClick={() => setModalMisPedidosAbierto(false)} className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
+            </div>
+
+            <div className="grow overflow-y-auto">
+              {cargandoMisPedidos ? (
+                <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Sincronizando tus transacciones con MySQL...</p>
+              ) : misPedidos.length === 0 ? (
+                <div className="text-center py-12 space-y-2">
+                  <p className="text-sm text-neutral-500 font-bold">Aún no has realizado ninguna compra en SneakerHub.</p>
+                  <p className="text-xs text-neutral-400">¡Arma tu pedido y confírmalo para verlo aquí reflejado!</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {misPedidos.map((pedido) => {
+                    const estaAbierto = miPedidoExpandido === pedido.id;
+                    return (
+                      <div key={pedido.id} className="border border-neutral-200 rounded-2xl overflow-hidden bg-white shadow-3xs transition-all">
+                        {/* Cabecera del Item de Pedido */}
+                        <div 
+                          onClick={() => setMiPedidoExpandido(estaAbierto ? null : pedido.id)}
+                          className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-neutral-50/80 transition-colors ${estaAbierto ? 'bg-neutral-50/50' : ''}`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <span className="font-mono font-black text-neutral-400 text-xs">#00{pedido.id}</span>
+                            <div className="text-xs">
+                              <p className="text-neutral-400 font-medium">{new Date(pedido.fecha_pedido).toLocaleString('es-PE')}</p>
+                              <p className="text-neutral-500 font-bold mt-0.5">Volumen: {pedido.detalles?.reduce((s, d) => s + d.cantidad, 0)} u.</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-end gap-6 border-t sm:border-t-0 pt-2 sm:pt-0">
+                            <div>
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                                {pedido.estado}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] font-bold text-neutral-400 block uppercase">Total Invertido</span>
+                              <span className="text-sm font-black text-neutral-900">S/. {parseFloat(pedido.total).toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Desglose Desplegable de Zapatillas */}
+                        {estaAbierto && (
+                          <div className="bg-neutral-50/50 p-4 border-t border-neutral-200 divide-y divide-neutral-200/60 animate-in fade-in duration-150">
+                            <p className="text-[10px] font-black uppercase text-neutral-400 tracking-wider mb-2">👟 Calzado Facturado:</p>
+                            {pedido.detalles?.map((det) => (
+                              <div key={det.id} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 first:pt-0 last:pb-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-neutral-900 uppercase tracking-tight">
+                                    {det.producto?.nombre || "Modelo Premium SneakerHub"}
+                                  </span>
+                                  <span className="bg-white border text-neutral-600 font-bold px-1.5 py-0.5 rounded-md text-[10px]">Talla {det.talla}</span>
+                                </div>
+                                <div className="flex justify-between sm:justify-end gap-6 text-neutral-500">
+                                  <span>Unidades: <b className="text-neutral-800 font-black">{det.cantidad}</b></span>
+                                  <span>Unitario: <b className="text-neutral-800 font-bold">S/. {parseFloat(det.precio_unitario).toFixed(2)}</b></span>
+                                  <span className="font-black text-neutral-900">S/. {(det.cantidad * det.precio_unitario).toFixed(2)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-neutral-100 pt-3 mt-4 text-center">
+              <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">¡Gracias por confiar en SneakerHub Ayacucho! S/. Pen</p>
             </div>
 
           </div>

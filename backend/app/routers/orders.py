@@ -5,6 +5,7 @@ from typing import List
 from app.database import get_db
 from app.models.order import Pedido, DetallePedido
 from app.models.product import TallaStock, VarianteColor
+from app.routers.auth import verificar_usuario # 🔐 Importación ahora 100% válida
 
 router = APIRouter(
     prefix="/api/pedidos",
@@ -24,16 +25,43 @@ class PedidoCreate(BaseModel):
 
 
 # =============================================================================
-# 📋 ENDPOINT: LISTAR HISTORIAL DE VENTAS CON DESGLOSE DE PRODUCTOS
+# 🛡️ ENDPOINT PROTEGIDO (HU-11): HISTORIAL PROPIO DEL CLIENTE AUTENTICADO
+# =============================================================================
+@router.get("/mis-pedidos", summary="Listar pedidos del cliente autenticado")
+def listar_mis_pedidos(
+    db: Session = Depends(get_db),
+    usuario_actual = Depends(verificar_usuario) # Recibe el objeto UsuarioAdmin desde MySQL
+):
+    """
+    Filtra la tabla de pedidos usando el nombre real del cliente autenticado 
+    extraído desde el token JWT decodificado.
+    """
+    try:
+        pedidos_cliente = db.query(Pedido).options(
+            joinedload(Pedido.detalles).joinedload(DetallePedido.producto)
+        ).filter(
+            Pedido.nombre_cliente == usuario_actual.nombre # Filtro por nombre visible
+        ).order_by(
+            Pedido.fecha_pedido.desc()
+        ).all()
+        
+        return pedidos_cliente
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fallo en la extracción del perfil transaccional del cliente: {str(e)}"
+        )
+
+
+# =============================================================================
+# 📋 ENDPOINT ADMINISTRATIVO: LISTAR HISTORIAL GLOBAL DE VENTAS
 # =============================================================================
 @router.get("/", summary="Listar todos los pedidos asentados")
 def listar_pedidos(db: Session = Depends(get_db)):
     """
-    Trae el histórico completo desde MySQL realizando una carga profunda relacional 
-    para inyectar los datos del Producto en cada renglón del detalle.
+    Trae el histórico completo desde MySQL realizando una carga profunda relacional.
     """
     try:
-        # 🌟 MEJORADO: Carga en cascada Pedido -> Detalles -> Producto para capturar los nombres reales
         pedidos = db.query(Pedido).options(
             joinedload(Pedido.detalles).joinedload(DetallePedido.producto)
         ).order_by(Pedido.fecha_pedido.desc()).all()
