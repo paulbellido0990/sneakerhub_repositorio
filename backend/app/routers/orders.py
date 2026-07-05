@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from app.database import get_db
 from app.models.order import Pedido, DetallePedido
 from app.models.product import TallaStock, VarianteColor
-# 🌟 MIGRACIÓN V7.1: Importamos ambos guardianes para cubrir los dos frentes de pedidos
 from app.routers.auth import verificar_usuario, verificar_admin 
 
 router = APIRouter(
@@ -22,9 +21,9 @@ class DetalleCreate(BaseModel):
 
 class PedidoCreate(BaseModel):
     nombre_cliente: str = "Cliente SneakerHub"
+    codigo_pago: str # 🌟 MIGRACIÓN V9.1: Campo mandatorio para auditoría antifraude
     detalles: List[DetalleCreate]
 
-# 🌟 NUEVO: Schema de validación para la actualización de estados de la HU-12
 class EstadoUpdate(BaseModel):
     estado: str
 
@@ -37,12 +36,8 @@ def actualizar_estado_pedido(
     pedido_id: int,
     payload: EstadoUpdate,
     db: Session = Depends(get_db),
-    admin_actual = Depends(verificar_admin) # Exige token válido de Administrador
+    admin_actual = Depends(verificar_admin)
 ):
-    """
-    Modifica el estado de un pedido en MySQL validando que pertenezca a la
-    máquina de estados finitos permitida por las reglas de negocio.
-    """
     try:
         estados_permitidos = ["PENDIENTE", "CONFIRMADO", "ENVIADO", "ENTREGADO"]
         nuevo_estado = payload.estado.upper()
@@ -53,7 +48,6 @@ def actualizar_estado_pedido(
                 detail=f"Estado inválido. Valores aceptados por el motor: {estados_permitidos}"
             )
 
-        # Buscamos el pedido en frío
         pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
         if not pedido:
             raise HTTPException(
@@ -61,7 +55,6 @@ def actualizar_estado_pedido(
                 detail=f"No se encontró el registro del pedido con ID #{pedido_id}."
             )
 
-        # Mutación del estado y guardado asíncrono
         pedido.estado = nuevo_estado
         db.commit()
 
@@ -90,9 +83,6 @@ def listar_mis_pedidos(
     db: Session = Depends(get_db),
     usuario_actual = Depends(verificar_usuario)
 ):
-    """
-    Filtra la tabla de pedidos usando el nombre real del cliente autenticado.
-    """
     try:
         pedidos_cliente = db.query(Pedido).options(
             joinedload(Pedido.detalles).joinedload(DetallePedido.producto)
@@ -115,9 +105,6 @@ def listar_mis_pedidos(
 # =============================================================================
 @router.get("/", summary="Listar todos los pedidos asentados")
 def listar_pedidos(db: Session = Depends(get_db)):
-    """
-    Trae el histórico completo desde MySQL realizando una carga profunda relacional.
-    """
     try:
         pedidos = db.query(Pedido).options(
             joinedload(Pedido.detalles).joinedload(DetallePedido.producto)
@@ -128,17 +115,26 @@ def listar_pedidos(db: Session = Depends(get_db)):
 
 
 # =============================================================================
-# 💳 ENDPOINT: REGISTRAR NUEVO PEDIDO
+# 💳 ENDPOINT: REGISTRAR NUEVO PEDIDO (ACTUALIZADO HU-14)
 # =============================================================================
 @router.post("/", status_code=status.HTTP_201_CREATED, summary="Registrar Pedido y Descontar Stock")
 def registrar_pedido(payload: PedidoCreate, db: Session = Depends(get_db)):
     try:
+        # Validación de seguridad perimetral para el código de operación
+        if not payload.codigo_pago.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El código de operación de Yape/Plin es requerido para procesar el despacho."
+            )
+
         total_calculado = sum(item.cantidad * item.precio_unitario for item in payload.detalles)
 
+        # 🌟 Se guarda el atributo 'codigo_pago' de forma nativa en la entidad de MySQL
         nuevo_pedido = Pedido(
             total=total_calculado,
             estado="PENDIENTE",
-            nombre_cliente=payload.nombre_cliente
+            nombre_cliente=payload.nombre_cliente,
+            codigo_pago=payload.codigo_pago 
         )
         db.add(nuevo_pedido)
         db.commit()

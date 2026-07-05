@@ -44,6 +44,9 @@ export default function App() {
   const [datosBI, setDatosBI] = useState(null);
   const [cargandoBI, setCargandoBI] = useState(false);
 
+  // 💳 ESTADO VALIDACIÓN DE COMPROBANTE ANTIFRAUDE (HU-14)
+  const [codigoPago, setCodigoPago] = useState('');
+
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
 
@@ -62,7 +65,7 @@ export default function App() {
   useEffect(() => {
     const tokenGuardado = localStorage.getItem('token');
     const rolGuardado = localStorage.getItem('rol');
-    const nombreGuardado = localStorage.getItem('nombre_usuario');
+    const fontNameGuardado = localStorage.getItem('nombre_usuario');
     
     if (!tokenGuardado) {
       setToken(null);
@@ -76,7 +79,7 @@ export default function App() {
       .then(() => {
         setToken(tokenGuardado);
         setRol(rolGuardado);
-        setNombreUsuario(nombreGuardado);
+        setNombreUsuario(fontNameGuardado);
       })
       .catch(() => {
         localStorage.removeItem('token');
@@ -86,7 +89,8 @@ export default function App() {
         setRol(null);
         setNombreUsuario(null);
       })
-      .finally(() => setValidandoSesion(false));
+      .finally(() => setValidatingSession(false));
+      const setValidatingSession = (val) => setValidandoSesion(val);
   }, []);
 
   useEffect(() => {
@@ -161,7 +165,6 @@ export default function App() {
     }
   }, [modalMisPedidosAbierto, token]);
 
-  // 🌟 CONSUMO DE TELEMETRÍA AGREGADA MULTIDIMENSIONAL (HU-13)
   useEffect(() => {
     if (verDashboardBI && rol === 'admin') {
       setCargandoBI(true);
@@ -242,11 +245,20 @@ export default function App() {
     );
   };
 
+  // 🌟 FLUJO ACTUALIZADO CON ADICIÓN DE CÓDIGO DE OPERACIÓN (HU-14)
   const enviarPedidoWhatsApp = async () => {
     if (carrito.length === 0) return;
+    
+    // Criterio de Aceptación: Validación en caliente de campo obligatorio lleno
+    if (!codigoPago.trim()) {
+      alert("⚠️ Validación de Pago: Ingresa el código de operación de tu transferencia (Yape o Plin) antes de continuar.");
+      return;
+    }
+
     try {
       const pedidoPayload = {
         nombre_cliente: nombreUsuario || "Cliente Web SneakerHub",
+        codigo_pago: codigoPago.trim(), // Inyectamos el string capturado
         detalles: carrito.map(item => ({
           producto_id: item.id,
           talla: item.talla,
@@ -257,15 +269,17 @@ export default function App() {
 
       await API.post('/pedidos/', pedidoPayload);
 
-      const CELULAR_TIENDA = "51999999999"; 
+      const CELULAR_TIENDA = "51900169073"; 
       let mensaje = `🚨 *¡Hola SneakerHub Ayacucho!* \n`;
-      mensaje += `Quiero realizar un pedido con el siguiente detalle:\n\n`;
+      mensaje += `He realizado mi transferencia. Aquí tienes el detalle de mi compra:\n\n`;
       carrito.forEach((item) => {
         mensaje += `👟 *${item.nombre}* \n📏 *Talla:* ${item.talla} | *Cant:* ${item.cantidad}\n💵 *Subtotal:* S/. ${(item.precio * item.cantidad).toFixed(2)}\n-------------------------------------------\n`;
       });
-      mensaje += `💰 *TOTAL A PAGAR: S/. ${totalCompra.toFixed(2)}*\n\nMi pedido ya quedó registrado en el sistema. ¿Coordinamos?`;
+      mensaje += `💰 *TOTAL TRANSFERIDO: S/. ${totalCompra.toFixed(2)}*\n`;
+      mensaje += `🔍 *CÓDIGO DE OPERACIÓN YAPE/PLIN:* ${codigoPago.trim()}\n\n¿Me confirman el despacho de mi pedido?`;
 
       setCarrito([]);
+      setCodigoPago(''); // Limpiamos el búfer del formulario
       setMenuCarritoAbierto(false);
       window.open(`https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`, '_blank');
     } catch (err) {
@@ -280,7 +294,6 @@ export default function App() {
         headers: { Authorization: `Bearer ${tokenGuardado}` }
       });
       setPedidos((prev) => prev.map(p => p.id === pedidoId ? { ...p, estado: nuevoEstado } : p));
-      // Si el dashboard está abierto, forzamos un refresco sutil de métricas económicas
       if (verDashboardBI) setVerDashboardBI(false); setTimeout(() => setVerDashboardBI(true), 50);
     } catch (err) {
       alert(`Error al actualizar estado: ${err.response?.data?.detail || err.message}`);
@@ -324,8 +337,6 @@ export default function App() {
             <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-neutral-950 text-white'}`}>{verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}</button>
             <button onClick={() => setModalPedidosAbierto(true)} className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer">📋 Historial de Pedidos</button>
             <button onClick={() => { setModalReportesAbierto(true); setMarcaFiltroReporte(''); }} className="bg-amber-500 text-white hover:bg-amber-600 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer shadow-xs">📈 Alertas de Stock</button>
-            
-            {/* 🌟 ENLACE INTERACTIVO NUEVO: FILTRO DEL PANEL DE CONTROL DE BUSINESS INTELLIGENCE */}
             <button onClick={() => setVerDashboardBI(!verDashboardBI)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verDashboardBI ? 'bg-white text-neutral-950 shadow-inner' : 'bg-neutral-900 text-white hover:bg-neutral-950'}`}>
               {verDashboardBI ? "📊 Ocultar BI" : "📊 Ver Dashboard BI"}
             </button>
@@ -361,7 +372,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* 🌟 SECCIÓN COMPONENTIZADA: DASHBOARD ANALÍTICO DE INTELIGENCIA DE NEGOCIO (HU-13) */}
+      {/* DASHBOARD ANALÍTICO DE INTELIGENCIA DE NEGOCIO (HU-13) */}
       {verDashboardBI && rol === 'admin' && (
         <section className="bg-neutral-900 border-b border-neutral-800 text-white p-6 animate-in slide-in-from-top duration-200">
           <div className="max-w-7xl mx-auto">
@@ -372,13 +383,10 @@ export default function App() {
               </div>
               <span className="text-[10px] bg-neutral-800 border border-neutral-700 px-2 py-1 rounded-md text-neutral-300 font-mono font-bold uppercase">Métricas Reales (No Pendientes)</span>
             </div>
-
             {cargandoBI ? (
               <p className="text-xs font-bold text-neutral-500 py-6 animate-pulse text-center">Calculando métricas agregadas en MySQL...</p>
             ) : datosBI ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* 1. Tarjeta Métricas Financieras */}
                 <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-2xl flex flex-col justify-between shadow-2xs">
                   <div>
                     <span className="text-[10px] font-black uppercase text-neutral-500 tracking-wider">Ingresos Netos del Mes</span>
@@ -389,8 +397,6 @@ export default function App() {
                     <span className="text-emerald-400 font-bold">2026 Activo ✓</span>
                   </div>
                 </div>
-
-                {/* 2. Tarjeta Top 3 Productos */}
                 <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-2xl shadow-2xs">
                   <span className="text-[10px] font-black uppercase text-neutral-500 tracking-wider block mb-2.5">Top 3 Calzado con Mayor Rotación</span>
                   {datosBI.top_3.length === 0 ? (
@@ -399,15 +405,13 @@ export default function App() {
                     <div className="space-y-2">
                       {datosBI.top_3.map((sneaker, index) => (
                         <div key={sneaker.nombre} className="flex items-center justify-between text-xs bg-neutral-900/60 p-2 rounded-xl border border-neutral-800/40">
-                          <span className="font-bold text-neutral-300 truncate max-w-[180px]"><b className="text-neutral-500 mr-1">{index + 1}.</b> {sneaker.nombre}</span>
+                          <span className="font-bold text-neutral-300 truncate max-w-45"><b className="text-neutral-500 mr-1">{index + 1}.</b> {sneaker.nombre}</span>
                           <span className="font-black bg-neutral-800 px-2 py-0.5 rounded-md font-mono text-white">{sneaker.unidades} u.</span>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-
-                {/* 3. Tarjeta Distribución de Marcas */}
                 <div className="bg-neutral-950 border border-neutral-800 p-4 rounded-2xl shadow-2xs">
                   <span className="text-[10px] font-black uppercase text-neutral-500 tracking-wider block mb-2.5">Preferencia del Público (Porcentaje de Venta)</span>
                   {datosBI.distribucion_marcas.length === 0 ? (
@@ -420,7 +424,6 @@ export default function App() {
                             <span className="uppercase text-[11px] font-black tracking-tight">{brand.marca}</span>
                             <span className="font-mono text-neutral-400">{brand.porcentaje}% <b className="text-[10px] font-normal text-neutral-500">({brand.unidades} u.)</b></span>
                           </div>
-                          {/* Barra de progreso analítica pura nativa CSS */}
                           <div className="w-full bg-neutral-900 h-2 rounded-full overflow-hidden border border-neutral-800">
                             <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${brand.porcentaje}%` }}></div>
                           </div>
@@ -429,7 +432,6 @@ export default function App() {
                     </div>
                   )}
                 </div>
-
               </div>
             ) : (
               <p className="text-xs text-red-400 font-bold">Fallo en la comunicación relacional con MySQL.</p>
@@ -512,14 +514,14 @@ export default function App() {
         </div>
       )}
 
-      {/* DRAWER LATERAL: MI PEDIDO */}
+      {/* DRAWER LATERAL: MI PEDIDO (ACTUALIZADO HU-14 CON CAMPO DE CÓDIGO) */}
       {menuCarritoAbierto && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-end">
           <div className="absolute inset-0" onClick={() => setMenuCarritoAbierto(false)}></div>
           <div key={totalCompra} className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between p-6 animate-in slide-in-from-right duration-150">
             <div>
               <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4"><h2 className="text-lg font-black uppercase">Mi Pedido</h2><button type="button" onClick={() => setMenuCarritoAbierto(false)} className="text-neutral-400 font-bold p-1 cursor-pointer">Cerrar ✕</button></div>
-              <div className="overflow-y-auto max-h-[65vh] space-y-4 pr-1">
+              <div className="overflow-y-auto max-h-[50vh] space-y-4 pr-1 mb-4">
                 {carrito.length === 0 ? <p className="text-center text-neutral-400 text-sm py-12">Carrito vacío.</p> : (
                   carrito.map((item) => (
                     <div key={`${item.id}-${item.talla}`} className="flex items-center gap-4 bg-neutral-50 p-3 rounded-2xl border border-neutral-100 relative">
@@ -540,7 +542,24 @@ export default function App() {
                 )}
               </div>
             </div>
-            <div className="border-t border-neutral-100 pt-4 mt-4">
+            
+            {/* 🌟 FORMULARIO HU-14 INTEGRADO: Entrada controlada de Código de Operación */}
+            <div className="border-t border-neutral-100 pt-4">
+              {carrito.length > 0 && (
+                <div className="mb-4 bg-neutral-50 p-3.5 rounded-2xl border border-neutral-200/60">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-neutral-500 block mb-1.5">💳 Inyectar Código de Operación Yape / Plin:</label>
+                  <input
+                    type="text"
+                    maxLength="12"
+                    placeholder="Ej. 02948174"
+                    value={codigoPago}
+                    onChange={(e) => setCodigoPago(e.target.value.replace(/\D/g, ''))} // Captura elástica solo números
+                    className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold focus:outline-none focus:border-neutral-900 text-neutral-800 tracking-widest"
+                  />
+                  <span className="text-[9px] text-neutral-400 font-medium mt-1 block">Realiza tu pago antes de gatillar la confirmación por WhatsApp.</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between mb-4"><span className="text-sm font-bold text-neutral-500 uppercase">Total Neto:</span><span className="text-2xl font-black text-neutral-900">S/. {totalCompra.toFixed(2)}</span></div>
               <button type="button" disabled={carrito.length === 0} onClick={enviarPedidoWhatsApp} className="w-full font-bold text-sm py-3.5 rounded-xl text-white flex items-center justify-center gap-2 uppercase tracking-wider bg-green-600 hover:bg-green-700 cursor-pointer">💬 Confirmar por WhatsApp</button>
             </div>
@@ -548,14 +567,14 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN) */}
+      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN - CON DESPLIEGUE HU-14 DE CÓDIGO DE OPERACIÓN) */}
       {modalPedidosAbierto && rol === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-neutral-200 pb-4 mb-4">
               <div>
                 <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900">📈 Auditoría Transaccional de Ventas</h3>
-                <p className="text-xs text-neutral-400">Cambia el estado en el selector para actualizar al cliente en tiempo real</p>
+                <p className="text-xs text-neutral-400">Verifica el código de Yape/Plin antes de validar la orden</p>
               </div>
               <button onClick={() => setModalPedidosAbierto(false)} className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
@@ -571,7 +590,7 @@ export default function App() {
                       <tr className="bg-neutral-50 text-[10px] font-black uppercase tracking-wider text-neutral-400 border-b border-neutral-200">
                         <th className="px-4 py-3">ID Pedido</th>
                         <th className="px-4 py-3">Fecha y Hora</th>
-                        <th className="px-4 py-3">Cliente</th>
+                        <th className="px-4 py-3">Cliente / Código Pago</th>
                         <th className="px-4 py-3 text-center">Volumen</th>
                         <th className="px-4 py-3">Gestión de Estado</th>
                         <th className="px-4 py-3 text-right">Total</th>
@@ -586,7 +605,11 @@ export default function App() {
                             <tr onClick={() => setPedidoExpandido(estaAbierto ? null : order.id)} className={`hover:bg-neutral-50/70 transition-colors cursor-pointer ${estaAbierto ? 'bg-blue-50/30' : ''}`}>
                               <td className="px-4 py-3.5 font-mono font-bold text-neutral-400">#00{order.id}</td>
                               <td className="px-4 py-3.5 text-neutral-500">{new Date(order.fecha_pedido).toLocaleString('es-PE')}</td>
-                              <td className="px-4 py-3.5 font-bold text-neutral-900">{order.nombre_cliente}</td>
+                              <td className="px-4 py-3.5">
+                                <p className="font-bold text-neutral-900">{order.nombre_cliente}</p>
+                                {/* 🌟 VISUALIZACIÓN HU-14: Código de pago expuesto para cruce bancario inmediato */}
+                                <p className="text-[10px] font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md mt-0.5 font-black tracking-wider inline-block">📲 OP: {order.codigo_pago || "N/A"}</p>
+                              </td>
                               <td className="px-4 py-3.5 text-center font-bold text-neutral-500 bg-neutral-50/30">{order.detalles?.reduce((sum, d) => sum + d.cantidad, 0)} u.</td>
                               <td className="px-4 py-3.5">
                                 <select
@@ -700,7 +723,7 @@ export default function App() {
         </div>
       )}
 
-      {/* VISTA DEL MODAL: HISTORIAL PROPIO DE COMPRAS (CLIENTE) */}
+      {/* VISTA DEL MODAL: HISTORIAL PROPIO DE COMPRAS (CLIENTE CON EXPOSICIÓN HU-14) */}
       {modalMisPedidosAbierto && token && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[80vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
@@ -734,6 +757,8 @@ export default function App() {
                             <div className="text-xs">
                               <p className="text-neutral-400 font-medium">{new Date(pedido.fecha_pedido).toLocaleString('es-PE')}</p>
                               <p className="text-neutral-500 font-bold mt-0.5">Volumen: {pedido.detalles?.reduce((s, d) => s + d.cantidad, 0)} u.</p>
+                              {/* 🌟 HU-14: El cliente también puede recordar con qué código pagó */}
+                              <p className="text-[10px] font-mono text-neutral-400 mt-1">📲 Operación: {pedido.codigo_pago}</p>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-6 border-t sm:border-t-0 pt-2 sm:pt-0">
