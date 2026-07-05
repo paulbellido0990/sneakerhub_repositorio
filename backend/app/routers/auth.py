@@ -1,94 +1,125 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import JSONResponse
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm  # 👈 Importamos el selector nativo
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from jose import jwt, JWTError
 from datetime import datetime, timedelta
-import bcrypt 
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import jwt, JWTError
+import bcrypt  # 🌟 SOLUCIÓN: Usamos el motor nativo directamente sin pasar por passlib
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.user import UsuarioAdmin  
+from app.models.order import UsuarioAdmin 
 
-router = APIRouter(prefix="/auth", tags=["Autenticación"])
-
-SECRET_KEY = "SNEAKERHUB_SUPER_SECRET_KEY_AYACUCHO"  
+# =============================================================================
+# 🔐 CONFIGURACIÓN DE SEGURIDAD GLOBAL (JWT)
+# =============================================================================
+SECRET_KEY = "SNEAKERHUB_AYACUCHO_SECRET_KEY_2026_MIGRATION"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 días de sesión activa
 
-# Configuración de la ruta de la llave para Swagger
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
+router = APIRouter(
+    prefix="/api/auth",
+    tags=["Autenticación"]
+)
+
+# =============================================================================
+# 📋 ESQUEMAS DE VALIDACIÓN (PYDANTIC)
+# =============================================================================
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
-    role: str
+    rol: str
 
 # =============================================================================
-# ENDPOINT DE LOGIN OPTIMIZADO PARA FORMULARIOS OAUTH2
+# 🛠️ FUNCIONES UTILITARIAS DE CIFRADO NATIVO (REFACTORIZADO)
 # =============================================================================
-@router.post("/login", response_model=TokenResponse)
-def login(
-    payload: OAuth2PasswordRequestForm = Depends(), # 👈 Captura automáticamente username y password desde Swagger o Frontend
-    db: Session = Depends(get_db)
-):
+def verificar_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Compara la contraseña en texto plano con el hash de la base de datos.
+    Bcrypt exige que ambos strings se transformen a bytes (.encode('utf-8')).
+    """
     try:
-        # OAuth2PasswordRequestForm mapea el correo en la propiedad '.username'
-        usuario = db.query(UsuarioAdmin).filter(UsuarioAdmin.correo == payload.username).first()
-        
-        password_valida = False
-        if usuario and usuario.contrasena_hash:
-            password_bytes = payload.password.encode('utf-8')
-            hash_en_db_bytes = usuario.contrasena_hash.encode('utf-8')
-            password_valida = bcrypt.checkpw(password_bytes, hash_en_db_bytes)
-
-        if not usuario or not password_valida:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Correo o contraseña incorrectos."}
-            )
-            
-        tiempo_expiracion = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        token_payload = {
-            "sub": usuario.correo,
-            "role": "ADMIN",  
-            "exp": tiempo_expiracion
-        }
-        
-        token_firmado = jwt.encode(token_payload, SECRET_KEY, algorithm=ALGORITHM)
-        
-        return {
-            "access_token": token_firmado,
-            "token_type": "bearer",
-            "role": "ADMIN"
-        }
-        
-    except Exception as e:
-        return JSONResponse(
-            status_code=500, 
-            content={"detail": f"Error interno: {str(e)}"}
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'), 
+            hashed_password.encode('utf-8')
         )
+    except Exception:
+        return False
 
-def obtener_admin_actual(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    excepcion_credenciales = HTTPException(
+def obtener_password_hash(password: str) -> str:
+    """
+    Genera un salt seguro y encripta la contraseña regresando un string limpio.
+    """
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def crear_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+# =============================================================================
+# 🚪 ENDPOINT: INICIO DE SESIÓN
+# =============================================================================
+@router.post("/login", response_model=TokenResponse, summary="Autenticar usuario y proveer JWT con Rol")
+def login(payload: UserLogin, db: Session = Depends(get_db)):
+    # Consulta usando la columna real detectada en tu MySQL ('correo')
+    user = db.query(UsuarioAdmin).filter(UsuarioAdmin.correo == payload.email).first()
+    
+    if not user or not verificar_password(payload.password, user.contrasena_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El correo electrónico o la contraseña son incorrectos."
+        )
+    
+    # Payload seguro del JWT
+    token_payload = {
+        "sub": user.correo,
+        "rol": user.rol,
+        "id": user.id
+    }
+    
+    access_token = crear_access_token(data=token_payload)
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "rol": user.rol
+    }
+
+# =============================================================================
+# 🛡️ GUARDIÁN DE SEGURIDAD
+# =============================================================================
+def verificar_admin(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Token de acceso inválido o expirado.",
+        detail="No se pudo validar la sesión activa.",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        rol: str = payload.get("role")
+        rol: str = payload.get("rol")
         
-        if email is None or rol != "ADMIN":
-            return JSONResponse(
+        if rol is None:
+            raise credentials_exception
+            
+        if rol != "admin":
+            raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                content={"detail": "Acceso denegado. No cuentas con privilegios de Administrador."}
+                detail="Acceso denegado: Se requieren privilegios de Administrador."
             )
-    except JWTError:
-        raise excepcion_credenciales
+            
+        return payload
         
-    usuario = db.query(UsuarioAdmin).filter(UsuarioAdmin.correo == email).first()
-    if usuario is None:
-        raise excepcion_credenciales
-    return usuario
+    except JWTError:
+        raise credentials_exception

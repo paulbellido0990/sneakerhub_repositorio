@@ -1,110 +1,99 @@
 import React, { useState } from 'react';
+import API from '../api';
 
 export default function Login({ onLoginSuccess }) {
-  // Estados para capturar las credenciales de Paul Administrador
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
 
-const handleSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    if (!email || !password) {
+      setError("Por favor, completa todos los campos.");
+      return;
+    }
+
+    setCargando(true);
+    setError(null);
 
     try {
-      // 📝 Convertimos los datos a formato de formulario estándar (URLSearchParams)
-      const datosFormulario = new URLSearchParams();
-      datosFormulario.append('username', email); // OAuth2 requiere que se llame 'username'
-      datosFormulario.append('password', password);
+      // Petición al endpoint de autenticación que actualizamos en FastAPI
+      const response = await API.post('/auth/login', {
+        email: email,
+        password: password
+      });
 
-          // ✅ Corrección en frontend/src/components/Login.jsx
-      const response = await fetch('http://127.0.0.1:8000/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: datosFormulario,
-      }); 
+      // 🌟 CLAVE: Extraemos tanto el access_token como el rol del backend
+      const { access_token, rol } = response.data;
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || 'Error al iniciar sesión');
-      }
-
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('role', data.role);
-      localStorage.setItem('userEmail', email);
-
-      if (onLoginSuccess) {
-        onLoginSuccess(data.access_token);
-      }
+      // Se los inyectamos al App.jsx para mapear la UI al instante
+      onLoginSuccess(access_token, rol);
 
     } catch (err) {
-      setError(err.message);
+      console.error(err);
+      setError(err.response?.data?.detail || "Error crítico de autenticación.");
     } finally {
-      setLoading(false);
+      setCargando(false);
     }
   };
-  
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 px-4">
-      <div className="max-w-md w-full bg-gray-800 rounded-xl shadow-2xl p-8 border border-gray-700">
+    <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 font-sans antialiased">
+      <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl space-y-6">
         
-        {/* Encabezado */}
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-extrabold text-white tracking-tight">
-            SneakerHub <span className="text-emerald-500">Ayacucho</span>
+        {/* LOGO / ENCABEZADO */}
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-black text-white uppercase tracking-tight">
+            SneakerHub <span className="text-neutral-500 font-medium text-xs block tracking-widest mt-1">Credenciales de Acceso</span>
           </h2>
-          <p className="text-sm text-gray-400 mt-2">Panel de Control y Administración</p>
+          <p className="text-xs text-neutral-400">Ingresa para interactuar con la plataforma relacional</p>
         </div>
 
-        {/* Alerta de Error */}
+        {/* FEEDBACK DE ERROR BIEN VISIBLE */}
         {error && (
-          <div className="mb-4 p-3 bg-red-900/50 border border-red-500 text-red-200 text-sm rounded-lg text-center">
-            {error}
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold p-3.5 rounded-xl text-center">
+            ⚠️ {error}
           </div>
         )}
 
-        {/* Formulario */}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Correo Electrónico
-            </label>
-            <input
-              type="email"
-              required
+        {/* FORMULARIO DE INGRESO */}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">Correo Electrónico</label>
+            <input 
+              type="email" 
+              placeholder="ejemplo@sneakerhub.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-              placeholder="admin@sneakerhub.pe"
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-600"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Contraseña
-            </label>
-            <input
-              type="password"
-              required
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-black uppercase text-neutral-400 tracking-wider">Contraseña Segura</label>
+            <input 
+              type="password" 
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-              placeholder="••••••••"
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-600"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white font-semibold rounded-lg shadow-md hover:shadow-emerald-500/20 transition duration-200"
+          <button 
+            type="submit" 
+            disabled={cargando}
+            className={`w-full font-bold text-xs py-3.5 rounded-xl text-black bg-white hover:bg-neutral-200 uppercase tracking-widest transition-all cursor-pointer ${cargando ? 'opacity-50 cursor-not-allowed animate-pulse' : ''}`}
           >
-            {loading ? 'Verificando credenciales...' : 'Ingresar al Sistema'}
+            {cargando ? "Autenticando..." : "Entrar al Sistema →"}
           </button>
         </form>
+
+        <div className="text-center">
+          <span className="text-[10px] text-neutral-600 font-bold uppercase tracking-widest">SneakerHub Ayacucho © 2026</span>
+        </div>
+
       </div>
     </div>
   );

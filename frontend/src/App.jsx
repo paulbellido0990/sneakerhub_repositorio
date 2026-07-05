@@ -7,9 +7,12 @@ import ModalEditarStock from './components/ModalEditarStock';
 
 export default function App() {
   // =============================================================================
-  // 🛡️ ESTADOS DE AUTENTICACIÓN Y CONTROL DE ACCESO BLINDADO
+  // 🛡️ ESTADOS DE AUTENTICACIÓN Y CONTROL DE ROL EN PERSISTENCIA
   // =============================================================================
   const [token, setToken] = useState(() => localStorage.getItem('token'));
+  // 🌟 NUEVO: Captura el rol directamente desde el almacenamiento del navegador
+  const [rol, setRol] = useState(() => localStorage.getItem('rol'));
+  
   const [mostrarLogin, setMostrarLogin] = useState(false);
   const [modalFormularioAbierto, setModalFormularioAbierto] = useState(false);
   const [validandoSesion, setValidandoSesion] = useState(true); 
@@ -27,8 +30,6 @@ export default function App() {
   const [modalPedidosAbierto, setModalPedidosAbierto] = useState(false);
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(false);
-  
-  // 🌟 NUEVO ESTADO: Almacena el ID del pedido que se encuentra desplegado/expandido
   const [pedidoExpandido, setPedidoExpandido] = useState(null);
 
   // Controladores de Ficha Técnica Modal
@@ -48,28 +49,44 @@ export default function App() {
 
   const totalCompra = carrito.reduce((sum, item) => sum + (Number(item.precio) * Number(item.cantidad)), 0);
 
-  // EFFECT 1: Validación de Credenciales (F5)
+  // =============================================================================
+  // 🛡️ EFFECT 1: VALIDACIÓN PERIMETRAL DE ROL Y TOKEN EN ARRANQUE (F5)
+  // =============================================================================
   useEffect(() => {
     const tokenGuardado = localStorage.getItem('token');
+    const rolGuardado = localStorage.getItem('rol');
+    
     if (!tokenGuardado) {
       setToken(null);
+      setRol(null);
       setValidandoSesion(false);
       return;
     }
-    API.get('/productos/buscar', { headers: { Authorization: `Bearer ${tokenGuardado}` } })
-      .then(() => setToken(tokenGuardado))
+    
+    // Consulta de validación al backend
+    API.get('/productos/buscar', { params: { estado: 'ACTIVO' } })
+      .then(() => {
+        setToken(tokenGuardado);
+        setRol(rolGuardado);
+      })
       .catch(() => {
         localStorage.removeItem('token');
+        localStorage.removeItem('rol');
         setToken(null);
+        setRol(null);
       })
       .finally(() => setValidandoSesion(false));
   }, []);
 
-  // EFFECT 2: Carga del Feed Público
+  // EFFECT 2: Sincronización del Feed según Rol (Ver Archivados solo Admin)
   useEffect(() => {
     setCargando(true);
     setError(null);
-    const params = { estado: verOcultos ? 'INACTIVO' : 'ACTIVO' };
+    
+    // Protección visual: Si un cliente intenta ver ocultos, se fuerza a falso
+    const modoOcultoActivo = (rol === 'admin') ? verOcultos : false;
+    const params = { estado: modoOcultoActivo ? 'INACTIVO' : 'ACTIVO' };
+    
     if (busqueda) params.q = busqueda;
     if (tallaFiltro) params.talla = tallaFiltro;
 
@@ -83,13 +100,13 @@ export default function App() {
         setError("Error de comunicación con el motor relacional.");
         setCargando(false);
       });
-  }, [busqueda, tallaFiltro, verOcultos]);
+  }, [busqueda, tallaFiltro, verOcultos, rol]);
 
-  // EFECTO 3: Carga del Historial de Ventas
+  // EFECTO 3: Historial bajo demanda para auditoría
   useEffect(() => {
-    if (modalPedidosAbierto) {
+    if (modalPedidosAbierto && rol === 'admin') {
       setCargandoPedidos(true);
-      setPedidoExpandido(null); // Resetea cualquier fila expandida previa al abrir
+      setPedidoExpandido(null);
       const tokenGuardado = localStorage.getItem('token');
       API.get('/pedidos/', { headers: { Authorization: `Bearer ${tokenGuardado}` } })
         .then((res) => {
@@ -101,11 +118,13 @@ export default function App() {
           setCargandoPedidos(false);
         });
     }
-  }, [modalPedidosAbierto]);
+  }, [modalPedidosAbierto, rol]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('rol'); // 🌟 Limpieza total de traza de acceso
     setToken(null);
+    setRol(null);
     setModalPedidosAbierto(false);
   };
 
@@ -116,7 +135,7 @@ export default function App() {
       setProductos((prev) => prev.filter(p => p.id !== id));
       setProductoSeleccionado(null);
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      alert(`Error: ${err.response?.data?.detail || err.message}`);
     }
   };
 
@@ -126,11 +145,11 @@ export default function App() {
       await API.post(`/productos/${id}/activar`, {}, { headers: { 'Authorization': `Bearer ${tokenGuardado}` } });
       setProductos((prev) => prev.filter(p => p.id !== id));
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      alert(`Error: ${err.response?.data?.detail || err.message}`);
     }
   };
 
-  // GESTORES OPERATIVOS DEL CARRITO
+  // GESTORES DEL CARRITO DE COMPRAS
   const agregarAlCarrito = () => {
     if (!tallaSeleccionada) { alert("Selecciona una talla"); return; }
     const variante = productoSeleccionado.variantes_color?.[0];
@@ -165,7 +184,7 @@ export default function App() {
     if (carrito.length === 0) return;
     try {
       const pedidoPayload = {
-        nombre_cliente: "Cliente Web SneakerHub",
+        nombre_cliente: rol === 'admin' ? "Administrador Interno" : "Cliente Web SneakerHub",
         detalles: carrito.map(item => ({
           producto_id: item.id,
           talla: item.talla,
@@ -192,16 +211,28 @@ export default function App() {
     }
   };
 
-  // Renderizadores de Bloqueo
   if (validandoSesion) return <div className="min-h-screen bg-neutral-50 flex items-center justify-center font-sans"><p className="text-xs font-black tracking-widest text-neutral-400 animate-pulse">Verificando Credenciales...</p></div>;
-  if (mostrarLogin) return <div className="relative"><button onClick={() => setMostrarLogin(false)} className="absolute top-4 left-4 bg-white/10 text-white font-bold text-xs px-4 py-2 rounded-xl border border-gray-700 z-50 cursor-pointer">← Volver al Catálogo</button><Login onLoginSuccess={(t) => { setToken(t); setMostrarLogin(false); }} /></div>;
+  
+  // Interfaz de login adaptada para inyectar token y rol de golpe
+  if (mostrarLogin) return (
+    <div className="relative">
+      <button onClick={() => setMostrarLogin(false)} className="absolute top-4 left-4 bg-white/10 text-white font-bold text-xs px-4 py-2 rounded-xl border border-gray-700 z-50 cursor-pointer">← Volver al Catálogo</button>
+      <Login onLoginSuccess={(t, r) => {
+        localStorage.setItem('token', t);
+        localStorage.setItem('rol', r);
+        setToken(t);
+        setRol(r);
+        setMostrarLogin(false);
+      }} />
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans antialiased">
       
-      {/* BARRA SUPERIOR DE ADMINISTRADOR GLOBAL */}
-      {token && (
-        <div className="bg-emerald-600 text-white text-xs font-bold py-2 px-4 flex justify-between items-center">
+      {/* 🌟 BARRA SUPERIOR EXCLUSIVA PARA EL ADMINISTRADOR */}
+      {token && rol === 'admin' && (
+        <div className="bg-emerald-600 text-white text-xs font-bold py-2 px-4 flex justify-between items-center animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-300 animate-pulse"></span>
             <span>🛡️ Panel Administrativo (Paul)</span>
@@ -213,15 +244,22 @@ export default function App() {
         </div>
       )}
 
-      {/* HEADER */}
+      {/* HEADER DINÁMICO */}
       <header className="bg-white border-b border-neutral-200 sticky top-0 z-40 px-4 py-4 shadow-2xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <h1 className="text-xl font-black tracking-tight uppercase">SneakerHub <span className="text-neutral-400 font-normal text-sm">Ayacucho</span></h1>
           <div className="flex items-center gap-3">
             {!token ? (
-              <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer">Anclaje Admin 🔐</button>
+              <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer">Ingresar 🔐</button>
             ) : (
-              <span className="bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl border border-emerald-200">Panel Activo</span>
+              <div className="flex items-center gap-2">
+                <span className={`text-[11px] font-black uppercase tracking-wider px-3 py-2 rounded-xl border ${rol === 'admin' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-blue-100 text-blue-800 border-blue-200'}`}>
+                  {rol === 'admin' ? "Panel Activo" : "Cliente Activo"}
+                </span>
+                {rol !== 'admin' && (
+                  <button onClick={handleLogout} className="text-neutral-500 hover:text-red-600 font-bold text-xs px-2 py-1">Salir</button>
+                )}
+              </div>
             )}
             <button onClick={() => setMenuCarritoAbierto(true)} className="bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer">🛒 Mi Carrito <span className="bg-red-500 text-white text-[10px] h-5 w-5 rounded-full flex items-center justify-center font-black">{carrito.reduce((s, i) => s + i.cantidad, 0)}</span></button>
           </div>
@@ -260,13 +298,21 @@ export default function App() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {productos.map((producto) => (
-              <ProductCard key={producto.id} producto={producto} alSeleccionar={(p) => { setProductoSeleccionado(p); setTallaSeleccionada(''); }} onEditarStock={(p) => setProductoParaStock(p)} onOcultarProducto={handleOcultarProducto} onActivarProducto={handleActivarProducto} />
+              <ProductCard 
+                key={producto.id} 
+                producto={producto} 
+                alSeleccionar={(p) => { setProductoSeleccionado(p); setTallaSeleccionada(''); }} 
+                // 🌟 INYECCIÓN CONDICIONAL: Solo otorga funciones de mutación si es admin legítimo
+                onEditarStock={rol === 'admin' ? (p) => setProductoParaStock(p) : null} 
+                onOcultarProducto={rol === 'admin' ? handleOcultarProducto : null} 
+                onActivarProducto={rol === 'admin' ? handleActivarProducto : null} 
+              />
             ))}
           </div>
         )}
       </main>
 
-      {/* MODAL FICHA TÉCNICA DEL CLIENTE */}
+      {/* MODAL FICHA TÉCNICA */}
       {productoSeleccionado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl relative flex flex-col md:flex-row">
@@ -331,8 +377,8 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: AUDITORÍA TRANSACCIONAL DE PEDIDOS CON DESGLOSE DESPLEGABLE */}
-      {modalPedidosAbierto && (
+      {/* MODAL: AUDITORÍA DE PEDIDOS (SOLO ADMIN) */}
+      {modalPedidosAbierto && rol === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-neutral-200 pb-4 mb-4">
@@ -367,25 +413,15 @@ export default function App() {
                         const estaAbierto = pedidoExpandido === order.id;
                         return (
                           <React.Fragment key={order.id}>
-                            {/* Renglón Principal */}
-                            <tr 
-                              onClick={() => setPedidoExpandido(estaAbierto ? null : order.id)}
-                              className={`hover:bg-neutral-50/70 transition-colors cursor-pointer ${estaAbierto ? 'bg-blue-50/30' : ''}`}
-                            >
+                            <tr onClick={() => setPedidoExpandido(estaAbierto ? null : order.id)} className={`hover:bg-neutral-50/70 transition-colors cursor-pointer ${estaAbierto ? 'bg-blue-50/30' : ''}`}>
                               <td className="px-4 py-3.5 font-mono font-bold text-neutral-400">#00{order.id}</td>
                               <td className="px-4 py-3.5 text-neutral-500">{new Date(order.fecha_pedido).toLocaleString('es-PE')}</td>
                               <td className="px-4 py-3.5 font-bold text-neutral-900">{order.nombre_cliente}</td>
                               <td className="px-4 py-3.5 text-center font-bold text-neutral-500 bg-neutral-50/30">{order.detalles?.reduce((sum, d) => sum + d.cantidad, 0)} u.</td>
                               <td className="px-4 py-3.5"><span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-2 py-1 rounded-md border border-amber-200">{order.estado}</span></td>
                               <td className="px-4 py-3.5 text-right font-black text-neutral-900 text-sm">S/. {parseFloat(order.total).toFixed(2)}</td>
-                              <td className="px-4 py-3.5 text-center">
-                                <button type="button" className="text-blue-600 font-bold text-xs hover:underline">
-                                  {estaAbierto ? "🙈 Cerrar" : "👁️ Detalles"}
-                                </button>
-                              </td>
+                              <td className="px-4 py-3.5 text-center"><button type="button" className="text-blue-600 font-bold text-xs hover:underline">{estaAbierto ? "🙈 Cerrar" : "👁️ Detalles"}</button></td>
                             </tr>
-
-                            {/* 🌟 FILA DESPLEGABLE DINÁMICA: Renderiza el desglose de lo que pidió en caliente */}
                             {estaAbierto && (
                               <tr className="bg-neutral-50/60 select-none animate-in fade-in duration-200">
                                 <td colSpan="7" className="px-6 py-4 border-t border-b border-neutral-200">
@@ -395,12 +431,8 @@ export default function App() {
                                       {order.detalles?.map((det) => (
                                         <div key={det.id} className="p-3.5 flex justify-between items-center text-xs">
                                           <div>
-                                            <span className="font-black text-neutral-900 uppercase tracking-tight">
-                                              {det.producto?.nombre || `Calzado Modelo #${det.producto_id}`}
-                                            </span>
-                                            <span className="bg-neutral-100 text-neutral-600 font-bold ml-3 px-2 py-0.5 rounded-md text-[10px]">
-                                              📏 Talla {det.talla}
-                                            </span>
+                                            <span className="font-black text-neutral-900 uppercase tracking-tight">{det.producto?.nombre || `Calzado Modelo #${det.producto_id}`}</span>
+                                            <span className="bg-neutral-100 text-neutral-600 font-bold ml-3 px-2 py-0.5 rounded-md text-[10px]">📏 Talla {det.talla}</span>
                                           </div>
                                           <div className="flex gap-8 text-neutral-500 font-medium">
                                             <span>Cant: <b className="text-neutral-900 font-bold">{det.cantidad}</b></span>
@@ -426,8 +458,9 @@ export default function App() {
         </div>
       )}
 
-      {modalFormularioAbierto && <FormularioProducto alCerrar={() => setModalFormularioAbierto(false)} onProductoRegistrado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
-      {productoParaStock && <ModalEditarStock producto={productoParaStock} alCerrar={() => setProductoParaStock(null)} onStockActualizado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
+      {/* MODALES ADMINISTRATIVOS PROTEGIDOS VISUALMENTE */}
+      {modalFormularioAbierto && rol === 'admin' && <FormularioProducto alCerrar={() => setModalFormularioAbierto(false)} onProductoRegistrado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
+      {productoParaStock && rol === 'admin' && <ModalEditarStock producto={productoParaStock} alCerrar={() => setProductoParaStock(null)} onStockActualizado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
 
     </div>
   );
