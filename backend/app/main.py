@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers import products_router  
 from app.routers.auth import router as auth_router 
-from app.routers.orders import router as orders_router # 👈 1. IMPORTAR EL NUEVO ENRUTADOR
+from app.routers.orders import router as orders_router 
+from app.routers.reports import router as reports_router # 🌟 1. IMPORTAR EL ENRUTADOR ANALÍTICO (HU-08)
 
 # Inicializar la aplicación FastAPI
 app = FastAPI(
@@ -29,7 +30,8 @@ app.add_middleware(
 # Incluir los enrutadores modulares del sistema
 app.include_router(products_router)
 app.include_router(auth_router) 
-app.include_router(orders_router) # 👈 2. ACOPLAR EL CANAL DE PEDIDOS
+app.include_router(orders_router) 
+app.include_router(reports_router) # 🌟 2. ACOPLAR EL CANAL DE TELEMETRÍA DE BAJO STOCK (HU-08)
 
 @app.get("/", tags=["Verificación Base"])
 def verificar_servidor():

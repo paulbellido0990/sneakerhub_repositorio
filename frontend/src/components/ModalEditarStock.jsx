@@ -1,122 +1,109 @@
 import React, { useState } from 'react';
+import API from '../api';
 
 export default function ModalEditarStock({ producto, alCerrar, onStockActualizado }) {
-  // Extraer las tallas actuales del producto o inicializar un mapa vacío
-  const listaTallasOriginales = producto.variantes_color?.[0]?.tallares_stock || [];
-  
-  // Mapear el stock inicial indexado por las tallas estándar (38 a 43)
-  const obtenerStockInicial = (talla) => {
-    const registro = listaTallasOriginales.find(t => t.talla === talla);
-    return registro ? registro.stock : 0;
+  // 🌟 MATRIZ EXTENDIDA DE TALLAS HOMOLOGADAS (HU-05)
+  const TALLAS_REGIONALES = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44"];
+
+  // Inicializar el estado indexando el inventario existente o seteando 0 por defecto
+  const [inventario, setInventario] = useState(() => {
+    const mapaInicial = {};
+    TALLAS_REGIONALES.forEach(talla => {
+      mapaInicial[talla] = 0;
+    });
+
+    const datosExistentes = producto?.variantes_color?.[0]?.tallares_stock || [];
+    datosExistentes.forEach(item => {
+      if (mapaInicial.hasOwnProperty(item.talla)) {
+        mapaInicial[item.talla] = item.stock;
+      }
+    });
+    return mapaInicial;
+  });
+
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleCambioStock = (talla, valor) => {
+    const unidades = parseInt(valor) || 0;
+    setInventario(prev => ({
+      ...prev,
+      [talla]: unidades < 0 ? 0 : unidades // Validación perimetral: No negativos
+    }));
   };
 
-  const [stock38, setStock38] = useState(obtenerStockInicial("38"));
-  const [stock39, setStock39] = useState(obtenerStockInicial("39"));
-  const [stock40, setStock40] = useState(obtenerStockInicial("40"));
-  const [stock41, setStock41] = useState(obtenerStockInicial("41"));
-  const [stock42, setStock42] = useState(obtenerStockInicial("42"));
-  const [stock43, setStock43] = useState(obtenerStockInicial("43"));
-
-  const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleGuardarStock = async (e) => {
+  const handleFormulario = async (e) => {
     e.preventDefault();
-    setEnviando(true);
-    setError('');
-
-    const token = localStorage.getItem('token');
-    const matrizActualizada = [
-      { talla: "38", stock: parseInt(stock38) || 0 },
-      { talla: "39", stock: parseInt(stock39) || 0 },
-      { talla: "40", stock: parseInt(stock40) || 0 },
-      { talla: "41", stock: parseInt(stock41) || 0 },
-      { talla: "42", stock: parseInt(stock42) || 0 },
-      { talla: "43", stock: parseInt(stock43) || 0 },
-    ];
+    setGuardando(false);
+    setGuardando(true);
+    setError(null);
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/productos/${producto.id}/stock`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(matrizActualizada)
+      const tokenGuardado = localStorage.getItem('token');
+      
+      // Construimos el array estructurado que nuestro backend procesa secuencialmente
+      const payload = Object.keys(inventario).map(talla => ({
+        talla: talla,
+        stock: inventario[talla]
+      }));
+
+      await API.put(`/productos/${producto.id}/stock`, payload, {
+        headers: { Authorization: `Bearer ${tokenGuardado}` }
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Fallo al actualizar stock.');
-
-      if (onStockActualizado) onStockActualizado();
+      onStockActualizado();
       alCerrar();
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setEnviando(false);
+      console.error(err);
+      setError(err.response?.data?.detail || "Fallo en la comunicación con el motor transaccional.");
+      setGuardando(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl relative border border-neutral-100">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-100">
+      <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-150">
         
-        <button onClick={alCerrar} className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-900 font-bold cursor-pointer">✕</button>
-
-        <span className="text-[10px] font-black uppercase text-emerald-600 tracking-wider bg-emerald-50 px-2 py-0.5 rounded-md">
-          {producto.marca?.nombre}
-        </span>
-        <h3 className="text-base font-black text-neutral-900 mt-1 uppercase line-clamp-1">
-          🔄 Reabastecer: {producto.nombre}
-        </h3>
-        <p className="text-xs text-neutral-400 mb-4">Modifica las cantidades físicas de inventario disponible.</p>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-bold p-2 rounded-xl text-center mb-4">
-            {error}
+        {/* Cabecera del Modal */}
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-4">
+          <div>
+            <h3 className="text-base font-black uppercase text-neutral-950">📦 Matriz de Almacén</h3>
+            <p className="text-xs text-neutral-400 line-clamp-1">{producto.nombre}</p>
           </div>
-        )}
+          <button type="button" onClick={alCerrar} className="text-neutral-400 hover:text-neutral-900 font-bold p-1 cursor-pointer">✕</button>
+        </div>
 
-        <form onSubmit={handleGuardarStock} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { t: '38', v: stock38, s: setStock38 },
-              { t: '39', v: stock39, s: setStock39 },
-              { t: '40', v: stock40, s: setStock40 },
-              { t: '41', v: stock41, s: setStock41 },
-              { t: '42', v: stock42, s: setStock42 },
-              { t: '43', v: stock43, s: setStock43 },
-            ].map(item => (
-              <div key={item.t} className="flex items-center justify-between bg-neutral-50 p-2 rounded-xl border border-neutral-100 gap-2">
-                <label className="text-xs font-black text-neutral-600 pl-1">Talla {item.t}</label>
-                <input 
-                  type="number" 
-                  min="0" 
-                  value={item.v} 
-                  onChange={(e) => item.s(e.target.value)} 
-                  className="w-16 border border-neutral-200 rounded-lg bg-white px-2 py-1 text-center text-xs font-bold text-neutral-900 focus:outline-none focus:border-neutral-900" 
-                />
-              </div>
-            ))}
+        {error && <div className="bg-red-50 border border-red-100 p-2.5 rounded-xl text-center text-red-600 text-xs mb-3 font-medium">{error}</div>}
+
+        {/* Formulario con grilla de Tallas de 35 a 44 */}
+        <form onSubmit={handleFormulario} className="flex flex-col grow overflow-hidden">
+          <div className="grow overflow-y-auto space-y-2.5 pr-1 py-1">
+            <div className="grid grid-cols-2 gap-3">
+              {TALLAS_REGIONALES.map((size) => (
+                <div key={size} className="flex items-center justify-between bg-neutral-50 border border-neutral-200 p-2.5 rounded-xl">
+                  <span className="text-xs font-black text-neutral-700 font-mono">US {size}</span>
+                  <input 
+                    type="number" 
+                    min="0"
+                    placeholder="0"
+                    value={inventario[size] === 0 ? "" : inventario[size]} 
+                    onChange={(e) => handleCambioStock(size, e.target.value)}
+                    className="w-20 bg-white border border-neutral-200 rounded-lg px-2 py-1 text-center text-xs font-bold font-mono focus:outline-none focus:border-emerald-600 transition-colors"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="flex gap-2 pt-2">
-            <button 
-              type="button" 
-              onClick={alCerrar} 
-              className="w-1/3 border border-neutral-200 text-neutral-700 font-bold text-xs py-3 rounded-xl hover:bg-neutral-50 uppercase tracking-wider cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button 
-              type="submit" 
-              disabled={enviando} 
-              className="w-2/3 bg-neutral-900 text-white font-bold text-xs py-3 rounded-xl hover:bg-neutral-800 uppercase tracking-wider disabled:bg-neutral-400 cursor-pointer"
-            >
-              {enviando ? 'Guardando...' : 'Actualizar MySQL'}
+          {/* Botones de acción */}
+          <div className="border-t border-neutral-100 pt-4 mt-4 flex gap-3">
+            <button type="button" onClick={alCerrar} className="w-1/3 border border-neutral-200 text-neutral-500 font-bold text-xs py-3 rounded-xl hover:bg-neutral-50 cursor-pointer uppercase tracking-wider">Cancelar</button>
+            <button type="submit" disabled={guardando} className="w-2/3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3 rounded-xl cursor-pointer uppercase tracking-wider shadow-xs transition-colors disabled:opacity-50">
+              {guardando ? "Sincronizando..." : "Actualizar Stock ✅"}
             </button>
           </div>
         </form>
+
       </div>
     </div>
   );

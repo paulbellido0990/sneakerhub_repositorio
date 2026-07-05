@@ -8,7 +8,6 @@ import ModalEditarStock from './components/ModalEditarStock';
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [rol, setRol] = useState(() => localStorage.getItem('rol'));
-  // 🌟 HU-06: Captura el nombre del usuario desde el almacenamiento local
   const [nombreUsuario, setNombreUsuario] = useState(() => localStorage.getItem('nombre_usuario'));
   
   const [mostrarLogin, setMostrarLogin] = useState(false);
@@ -27,6 +26,12 @@ export default function App() {
   const [pedidos, setPedidos] = useState([]);
   const [cargandoPedidos, setCargandoPedidos] = useState(false);
   const [pedidoExpandido, setPedidoExpandido] = useState(null);
+
+  // 📈 ESTADOS DE TELEMETRÍA DE BAJO STOCK (HU-08)
+  const [modalReportesAbierto, setModalReportesAbierto] = useState(false);
+  const [reportesBajoStock, setReportesBajoStock] = useState([]);
+  const [cargandoReportes, setCargandoReportes] = useState(false);
+  const [marcaFiltroReporte, setMarcaFiltroReporte] = useState('');
 
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
@@ -112,14 +117,31 @@ export default function App() {
     }
   }, [modalPedidosAbierto, rol]);
 
+  useEffect(() => {
+    if (modalReportesAbierto && rol === 'admin') {
+      setCargandoReportes(true);
+      const tokenGuardado = localStorage.getItem('token');
+      API.get('/admin/reportes/bajo-stock', { headers: { Authorization: `Bearer ${tokenGuardado}` } })
+        .then((res) => {
+          setReportesBajoStock(res.data);
+          setCargandoReportes(false);
+        })
+        .catch((err) => {
+          console.error("Fallo al sincronizar telemetría:", err);
+          setCargandoReportes(false);
+        });
+    }
+  }, [modalReportesAbierto, rol]);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('rol');
-    localStorage.removeItem('nombre_usuario'); // 🌟 Limpieza HU-06
+    localStorage.removeItem('nombre_usuario');
     setToken(null);
     setRol(null);
     setNombreUsuario(null);
     setModalPedidosAbierto(false);
+    setModalReportesAbierto(false);
   };
 
   const handleOcultarProducto = async (id) => {
@@ -154,7 +176,7 @@ export default function App() {
     setCarrito((prevCarrito) => {
       const existente = prevCarrito.find(i => i.id === productoSeleccionado.id && i.talla === tallaSeleccionada);
       if (existente) {
-        return prevCarrito.map(i => (i.id === productoSeleccionado.id && i.talla === tallaSeleccionada) ? { ...i, cantidad: i.cantidad + 1 } : i);
+        return prevCarrito.map(i => (i.id === productoSeleccionado.id && i.talla === tallaSeleccionada) ? { ...i, ...{ cantidad: i.cantidad + 1 } } : i);
       } else {
         return [...prevCarrito, { id: productoSeleccionado.id, nombre: productoSeleccionado.nombre, marca: productoSeleccionado.marca?.nombre, precio: parseFloat(precioReal), talla: tallaSeleccionada, imagen: img, cantidad: 1 }];
       }
@@ -168,7 +190,7 @@ export default function App() {
   const modificarCantidad = (id, talla, factor) => {
     setCarrito((prevCarrito) =>
       prevCarrito
-        .map(i => (i.id === id && i.talla === talla) ? { ...i, cantidad: Number(i.cantidad) + factor } : i)
+        .map(i => (i.id === id && i.talla === talla) ? { ...i, ...{ cantidad: Number(i.cantidad) + factor } } : i)
         .filter(i => i.cantidad > 0)
     );
   };
@@ -188,7 +210,7 @@ export default function App() {
 
       await API.post('/pedidos/', pedidoPayload);
 
-      const CELULAR_TIENDA = "51900169073"; 
+      const CELULAR_TIENDA = "51999999999"; 
       let mensaje = `🚨 *¡Hola SneakerHub Ayacucho!* \n`;
       mensaje += `Quiero realizar un pedido con el siguiente detalle:\n\n`;
       carrito.forEach((item) => {
@@ -204,6 +226,14 @@ export default function App() {
     }
   };
 
+  const marcasReporte = Array.isArray(reportesBajoStock) 
+    ? [...new Set(reportesBajoStock.map(item => item?.marca).filter(Boolean))]
+    : [];
+
+  const reportesFiltrados = Array.isArray(reportesBajoStock)
+    ? (marcaFiltroReporte ? reportesBajoStock.filter(item => item?.marca === marcaFiltroReporte) : reportesBajoStock)
+    : [];
+
   if (validandoSesion) return <div className="min-h-screen bg-neutral-50 flex items-center justify-center font-sans"><p className="text-xs font-black tracking-widest text-neutral-400 animate-pulse">Verificando Credenciales...</p></div>;
   
   if (mostrarLogin) return (
@@ -212,7 +242,7 @@ export default function App() {
       <Login onLoginSuccess={(t, r, n) => {
         localStorage.setItem('token', t);
         localStorage.setItem('rol', r);
-        localStorage.setItem('nombre_usuario', n); // 🌟 Guardado HU-06
+        localStorage.setItem('nombre_usuario', n);
         setToken(t);
         setRol(r);
         setNombreUsuario(n);
@@ -232,6 +262,7 @@ export default function App() {
             <button onClick={() => setModalFormularioAbierto(true)} className="bg-white text-emerald-800 px-3 py-1 rounded-lg text-[11px] font-black hover:bg-neutral-100 cursor-pointer uppercase">+ Añadir Zapatilla</button>
             <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-neutral-950 text-white'}`}>{verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}</button>
             <button onClick={() => setModalPedidosAbierto(true)} className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer">📋 Historial de Pedidos</button>
+            <button onClick={() => { setModalReportesAbierto(true); setMarcaFiltroReporte(''); }} className="bg-amber-500 text-white hover:bg-amber-600 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer shadow-xs">📈 Alertas de Stock</button>
           </div>
           <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg text-[11px] font-black cursor-pointer uppercase">Cerrar Sesión</button>
         </div>
@@ -242,14 +273,11 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <h1 className="text-xl font-black tracking-tight uppercase">SneakerHub <span className="text-neutral-400 font-normal text-sm">Ayacucho</span></h1>
           <div className="flex items-center gap-4">
-            
-            {/* 🌟 Criterio de Aceptación 3: Visualizar el saludo personalizado con el nombre */}
             {token && (
               <span className="text-xs font-bold text-neutral-600">
                 👋 Hola, <b className="text-neutral-900 font-black">{nombreUsuario}</b>
               </span>
             )}
-
             {!token ? (
               <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer">Ingresar 🔐</button>
             ) : (
@@ -278,7 +306,8 @@ export default function App() {
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">Filtrar por tu Talla</label>
             <select value={tallaFiltro} onChange={(e) => setTallaFiltro(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none cursor-pointer">
               <option value="">Todas las tallas disponibles</option>
-              {["38", "39", "40", "41", "42", "43", "44"].map(t => <option key={t} value={t}>Talla {t}</option>)}
+              {/* 🌟 FILTRO HOMOLOGADO COMPLETO DESDE LA 35 HASTA LA 44 */}
+              {["35", "36", "37", "38", "39", "40", "41", "42", "43", "44"].map(t => <option key={t} value={t}>Talla {t}</option>)}
             </select>
           </div>
           <div className="flex items-end">
@@ -377,7 +406,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: AUDITORÍA DE PEDIDOS (SOLO ADMIN) */}
+      {/* MODAL: AUDITORÍA DE PEDIDOS */}
       {modalPedidosAbierto && rol === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
@@ -388,7 +417,6 @@ export default function App() {
               </div>
               <button onClick={() => setModalPedidosAbierto(false)} className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
-
             <div className="grow overflow-y-auto">
               {cargandoPedidos ? (
                 <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Extrayendo datos de base de datos...</p>
@@ -454,6 +482,80 @@ export default function App() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DASHBOARD DE ALERTAS CRÍTICAS DE STOCK (HU-08) */}
+      {modalReportesAbierto && rol === 'admin' && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[80vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200 pb-4 mb-4">
+              <div>
+                <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">
+                  🚨 Telemetría de Rotura de Stock
+                </h3>
+                <p className="text-xs text-neutral-400">Variantes con inventario crítico menor o igual a 2 unidades para reposición</p>
+              </div>
+              <button onClick={() => setModalReportesAbierto(false)} className="self-end sm:self-center bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
+            </div>
+
+            <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200 flex items-center gap-3 mb-4">
+              <label className="text-[10px] font-black uppercase tracking-wider text-neutral-500">Filtrar por Marca Fabricante:</label>
+              <select 
+                value={marcaFiltroReporte} 
+                onChange={(e) => setMarcaFiltroReporte(e.target.value)}
+                className="bg-white border border-neutral-200 rounded-lg text-xs font-bold py-1 px-2.5 focus:outline-none cursor-pointer text-neutral-800"
+              >
+                <option value="">Todas las marcas globales</option>
+                {marcasReporte.map(brand => <option key={brand} value={brand}>{brand}</option>)}
+              </select>
+            </div>
+
+            <div className="grow overflow-y-auto">
+              {cargandoReportes ? (
+                <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Ejecutando agregación en MySQL...</p>
+              ) : reportesFiltrados.length === 0 ? (
+                <p className="text-center py-12 text-sm text-neutral-500 font-bold">🎉 No existen variantes críticamente agotadas en esta selección.</p>
+              ) : (
+                <div className="border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
+                  <table className="w-full text-left border-collapse bg-white">
+                    <thead>
+                      <tr className="bg-neutral-50 text-[10px] font-black uppercase tracking-wider text-neutral-400 border-b border-neutral-200">
+                        <th className="px-4 py-2.5">Marca</th>
+                        <th className="px-4 py-2.5">Modelo Zapatilla</th>
+                        <th className="px-4 py-2.5">Variante Color</th>
+                        <th className="px-4 py-2.5 text-center">Talla</th>
+                        <th className="px-4 py-2.5 text-center bg-red-50 text-red-700">Stock Actual</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-xs text-neutral-700">
+                      {reportesFiltrados.map((item) => (
+                        <tr key={item.talla_id} className={`transition-colors ${item.stock === 0 ? 'bg-red-50/60 font-black text-red-600' : 'bg-amber-50/30 text-amber-900'}`}>
+                          <td className="px-4 py-3 font-black uppercase tracking-tight text-[11px]">{item.marca}</td>
+                          <td className="px-4 py-3 font-medium">{item.nombre}</td>
+                          
+                          <td className="px-4 py-3 text-neutral-500">
+                            {typeof item?.color === 'object' ? (item?.color?.nombre || "Estándar") : (item?.color || "Estándar")}
+                          </td>
+                          
+                          <td className="px-4 py-3 text-center font-mono font-bold">US {item.talla}</td>
+                          <td className="px-4 py-3 text-center font-black bg-red-100/40 text-red-600 border-l border-red-200 text-sm">
+                            {item.stock} u. {item.stock === 0 ? '🚫 AGOTADO' : '⚠️'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            
+            <div className="border-t border-neutral-100 pt-3 mt-4 text-right">
+              <span className="text-[10px] text-neutral-400 font-bold uppercase font-mono">Telemetría Activa de Almacén</span>
+            </div>
+
           </div>
         </div>
       )}

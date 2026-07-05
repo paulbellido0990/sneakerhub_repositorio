@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import List, Optional
@@ -11,13 +11,7 @@ router = APIRouter(
     tags=["Productos"]
 )
 
-# =============================================================================
-# 📋 ESQUEMAS DE VALIDACIÓN (PYDANTIC)
-# =============================================================================
-class StockUpdate(BaseModel):
-    talla: str
-    nuevo_stock: int
-
+# Esquema base para la creación de productos
 class ProductoCreate(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
@@ -26,7 +20,7 @@ class ProductoCreate(BaseModel):
     precio_final: Optional[float] = None
     marca_id: int
     categoria_id: int
-    tallas_iniciales: List[StockUpdate]  # Para inicializar stock al crear
+    tallas_iniciales: List[dict]
 
 # =============================================================================
 # 🌐 1. ENDPOINT PÚBLICO: BUSCAR / LISTAR FILTRADO
@@ -38,10 +32,6 @@ def buscar_productos(
     estado: Optional[str] = "ACTIVO",
     db: Session = Depends(get_db)
 ):
-    """
-    Endpoint de libre acceso para clientes y administrador. 
-    Realiza filtros dinámicos concurrentes sobre la base de datos de zapatillas.
-    """
     query = db.query(Producto).options(
         joinedload(Producto.marca),
         joinedload(Producto.categoria),
@@ -66,13 +56,9 @@ def buscar_productos(
 def crear_producto(
     payload: ProductoCreate, 
     db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin) # 🔐 GUARDIÁN ACTIVADO
+    admin: dict = Depends(verificar_admin)
 ):
-    """
-    Inserta una nueva zapatilla en el motor relacional. Requiere token de Administrador.
-    """
     try:
-        # Calcular precio final dinámico si hay descuento
         p_final = payload.precio_final or (payload.precio_base * (1 - (payload.porcentaje_descuento / 100)))
 
         nuevo_prod = Producto(
@@ -89,18 +75,18 @@ def crear_producto(
         db.commit()
         db.refresh(nuevo_prod)
 
-        # Crear una variante de color por defecto para albergar las tallas
         nueva_variante = VarianteColor(producto_id=nuevo_prod.id, color_nombre="Estándar")
         db.add(nueva_variante)
         db.commit()
         db.refresh(nueva_variante)
 
-        # Inicializar el inventario de tallas enviado
         for item in payload.tallas_iniciales:
+            talla_val = item.get("talla") or item.get("size")
+            stock_val = item.get("nuevo_stock") or item.get("stock") or item.get("cantidad") or 0
             stock_talla = TallaStock(
                 variante_color_id=nueva_variante.id,
-                talla=item.talla,
-                stock=item.nuevo_stock
+                talla=str(talla_val),
+                stock=int(stock_val)
             )
             db.add(stock_talla)
         
@@ -112,40 +98,93 @@ def crear_producto(
         raise HTTPException(status_code=500, detail=f"Error en la persistencia del producto: {str(e)}")
 
 # =============================================================================
-# 🛡️ 3. ENDPOINT PROTEGIDO: ACTUALIZAR STOCK DE UNA TALLA
+# 🛡️ 3. ENDPOINT PROTEGIDO: ACTUALIZAR STOCK (PROCESAMIENTO ITERATIVO DE ARRAYS)
 # =============================================================================
-@router.post("/{id}/stock", summary="Modificar inventario físico de una variante")
-def editar_stock(
+@router.put("/{id}/stock")
+@router.post("/{id}/stock")
+async def editar_stock(
     id: int, 
-    payload: StockUpdate, 
+    request: Request, 
     db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin) # 🔐 GUARDIÁN ACTIVADO
+    admin: dict = Depends(verificar_admin)
 ):
     """
-    Modifica directamente las unidades físicas disponibles en la tabla 'tallas_stock'.
+    Recibe el payload crudo del cliente. Si es un elemento único o un array 
+    de modificaciones de tallas, los unifica en un bucle iterable para guardarlos.
     """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Error formativo: El cuerpo enviado no es un JSON válido o está vacío."
+        )
+
+    # 🌟 ARQUITECTURA ELÁSTICA: Si es un dict único lo volvemos lista, si ya es una lista la dejamos pasar
+    items_a_procesar = payload if isinstance(payload, list) else [payload]
+
     variante = db.query(VarianteColor).filter(VarianteColor.producto_id == id).first()
     if not variante:
         raise HTTPException(status_code=404, detail="No se encontró una variante de color para este producto.")
 
-    registro_stock = db.query(TallaStock).filter(
-        TallaStock.variante_color_id == variante.id,
-        TallaStock.talla == payload.talla
-    ).first()
+    registros_actualizados = 0
 
-    if not registro_stock:
-        # Si la talla no existía en la matriz, se crea el registro en caliente
-        registro_stock = TallaStock(
-            variante_color_id=variante.id,
-            talla=payload.talla,
-            stock=payload.nuevo_stock
-        )
-        db.add(registro_stock)
-    else:
-        registro_stock.stock = payload.nuevo_stock
+    # Procesamos de forma secuencial cada bloque de actualización del array
+    for item in items_a_procesar:
+        talla = item.get("talla") or item.get("size") or item.get("talla_id")
+        
+        cantidad_final = None
+        for llave in ["nuevo_stock", "stock", "cantidad", "nuevoStock", "value"]:
+            if llave in item and item[llave] is not None:
+                cantidad_final = item[llave]
+                break
 
+        # Si viene un nodo vacío o incompleto en el array, lo saltamos de forma segura
+        if not talla or cantidad_final is None:
+            continue
+
+        try:
+            talla_str = str(talla)
+            cantidad_int = int(cantidad_final)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Error de tipado: Las unidades de stock o la talla no pudieron convertirse a valores válidos."
+            )
+
+        if cantidad_int < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inconsistencia: El volumen físico de existencias no puede ser un valor negativo."
+            )
+
+        # Buscamos el registro específico de la talla para el producto en MySQL
+        registro_stock = db.query(TallaStock).filter(
+            TallaStock.variante_color_id == variante.id,
+            TallaStock.talla == talla_str
+        ).first()
+
+        if not registro_stock:
+            # Creación en caliente si la talla no existía previamente en el catálogo
+            registro_stock = TallaStock(
+                variante_color_id=variante.id,
+                talla=talla_str,
+                stock=cantidad_int
+            )
+            db.add(registro_stock)
+        else:
+            # Modificación de las existencias físicas
+            registro_stock.stock = cantidad_int
+        
+        registros_actualizados += 1
+
+    # Confirmamos la transacción completa de forma segura
     db.commit()
-    return {"status": "Éxito", "mensaje": f"Stock de la talla {payload.talla} actualizado a {payload.nuevo_stock} unidades."}
+    
+    return {
+        "status": "Éxito", 
+        "mensaje": f"Se procesaron con éxito {registros_actualizados} modificaciones de inventario."
+    }
 
 # =============================================================================
 # 🛡️ 4. ENDPOINT PROTEGIDO: ARCHIVAR / OCULTAR PRODUCTO (Borrado Lógico)
@@ -154,11 +193,8 @@ def editar_stock(
 def ocultar_producto(
     id: int, 
     db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin) # 🔐 GUARDIÁN ACTIVADO
+    admin: dict = Depends(verificar_admin)
 ):
-    """
-    Cambia el estado del calzado a 'INACTIVO' para que desaparezca del flujo del cliente.
-    """
     producto = db.query(Producto).filter(Producto.id == id).first()
     if not producto:
         raise HTTPException(status_code=404, detail="El modelo especificado no existe.")
@@ -174,11 +210,8 @@ def ocultar_producto(
 def activar_producto(
     id: int, 
     db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin) # 🔐 GUARDIÁN ACTIVADO
+    admin: dict = Depends(verificar_admin)
 ):
-    """
-    Devuelve un producto archivado al estado 'ACTIVO' para reincorporarlo a la vitrina.
-    """
     producto = db.query(Producto).filter(Producto.id == id).first()
     if not producto:
         raise HTTPException(status_code=404, detail="El modelo especificado no existe.")
