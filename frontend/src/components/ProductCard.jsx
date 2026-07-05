@@ -1,100 +1,125 @@
 import React from 'react';
 
-export default function ProductCard({ producto, alSeleccionar, onEditarStock, onOcultarProducto, onActivarProducto }) {
-  const token = localStorage.getItem('token'); 
-  
-  const variantePrincipal = producto.variantes_color?.[0];
-  const imagenUrl = variantePrincipal?.imagenes?.find(img => img.es_principal)?.url_imagen 
-    || variantePrincipal?.imagenes?.[0]?.url_imagen;
+export default function ProductCard({ 
+  producto, 
+  alSeleccionar, 
+  onEditarStock, 
+  onOcultarProducto, 
+  onActivarProducto,
+  onEditarProducto // 🌟 RECIBIDO PARA LA HU-15
+}) {
+  const variante = producto.variantes_color?.[0];
+  const imagenPrincipal = variante?.imagenes?.find(img => img.es_principal)?.url_imagen || variante?.imagenes?.[0]?.url_imagen;
 
-  // 🌟 DEFENSIVO: Si el backend no envía 'precio_final', lo calculamos en caliente aquí
-  const precioCalculado = producto.precio_final 
-    || (producto.precio_base * (1 - (producto.porcentaje_descuento || 0) / 100)).toFixed(2);
-
-  const esInactivo = producto.estado === "INACTIVO";
+  // Cálculo preciso de precios comerciales
+  const tieneDescuento = producto.porcentaje_descuento > 0;
+  const precioFinal = tieneDescuento 
+    ? (producto.precio_base * (1 - producto.porcentaje_descuento / 100)).toFixed(2)
+    : parseFloat(producto.precio_base).toFixed(2);
 
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200/80 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between relative group">
+    <div className="bg-white border border-neutral-200/80 rounded-2xl overflow-hidden shadow-3xs hover:shadow-2xs transition-all duration-300 flex flex-col justify-between group relative">
       
-      {/* Etiqueta de Descuento */}
-      {producto.porcentaje_descuento > 0 && (
-        <span className="absolute top-3 left-3 bg-red-500 text-white font-black text-[10px] uppercase px-2 py-0.5 rounded-md tracking-wider z-10 animate-pulse">
-          - {producto.porcentaje_descuento} %
+      {/* Etiqueta de Descuento Flotante */}
+      {tieneDescuento && (
+        <span className="absolute top-3 left-3 bg-red-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md z-10 tracking-wider shadow-2xs">
+          -{producto.porcentaje_descuento}% OFF
         </span>
       )}
 
-      {/* Área Clickable de la Ficha Técnica */}
-      <div onClick={() => !esInactivo && alSeleccionar(producto)} className={`grow ${esInactivo ? 'cursor-default opacity-75' : 'cursor-pointer'}`}>
-        <div className="aspect-square bg-neutral-50 p-6 flex items-center justify-center overflow-hidden">
+      {/* Contenedor de Imagen de Producto */}
+      <div 
+        onClick={() => alSeleccionar(producto)} 
+        className="aspect-square bg-neutral-50/70 p-6 flex items-center justify-center cursor-pointer overflow-hidden relative"
+      >
+        {imagenPrincipal ? (
           <img 
-            src={imagenUrl || "https://images.unsplash.com/photo-1600185365483-26d7a4cc7519?q=80&w=500"} 
+            src={imagenPrincipal} 
             alt={producto.nombre} 
             className="max-h-40 object-contain group-hover:scale-105 transition-transform duration-300"
           />
-        </div>
+        ) : (
+          <div className="text-neutral-300 font-mono text-[10px] uppercase font-bold">Sin foto de vitrina</div>
+        )}
+      </div>
 
-        <div className="p-4 space-y-1">
-          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-            {producto.marca?.nombre || "Calzado"} {esInactivo && "• 🗄️ ARCHIVADO"}
+      {/* Cuerpo Informativo */}
+      <div className="p-4 flex-grow flex flex-col justify-between gap-3">
+        <div>
+          <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider font-mono">
+            {producto.marca?.nombre || "Premium"} • {producto.categoria?.nombre || "Zapatilla"}
           </span>
-          <h3 className="text-sm font-black text-neutral-900 tracking-tight uppercase line-clamp-1">
+          <h3 
+            onClick={() => alSeleccionar(producto)} 
+            className="text-sm font-black text-neutral-900 mt-0.5 line-clamp-1 uppercase tracking-tight cursor-pointer hover:text-neutral-600 transition-colors"
+          >
             {producto.nombre}
           </h3>
-          <div className="flex items-baseline gap-2 pt-1">
-            {/* 🌟 Muestra el precio calculado de forma segura */}
-            <span className="text-base font-black text-neutral-900">S/. {precioCalculado}</span>
-            {producto.porcentaje_descuento > 0 && (
-              <span className="text-xs text-neutral-400 line-through">S/. {producto.precio_base}</span>
+          
+          {/* Bloque de Precios */}
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-base font-black text-neutral-900 font-mono">S/. {precioFinal}</span>
+            {tieneDescuento && (
+              <span className="text-xs text-neutral-400 line-through font-mono">S/. {parseFloat(producto.precio_base).toFixed(2)}</span>
             )}
           </div>
         </div>
-      </div>
 
-      {/* CONTROLES ADMINISTRATIVOS */}
-      {token && onEditarStock && onOcultarProducto && onActivarProducto && (
-        <div className="p-3 bg-neutral-50 border-t border-neutral-100 flex gap-2">
+        {/* =============================================================================
+            🛡️ CAPA DE CONTROLES OPERATIVOS EXCLUSIVOS ADMINISTRATIVOS
+           ============================================================================= */}
+        {onEditarStock ? (
+          <div className="border-t border-neutral-100 pt-3 flex flex-col gap-1.5 bg-neutral-50/50 -mx-4 -mb-4 p-4 mt-1 select-none">
+            <div className="flex gap-1.5">
+              {/* 🌟 NUEVO BOTÓN (HU-15): Editar ficha técnica completa */}
+              {onEditarProducto && (
+                <button
+                  type="button"
+                  onClick={() => onEditarProducto(producto)}
+                  className="w-1/2 bg-neutral-900 hover:bg-neutral-950 text-white text-[10px] font-black py-2 rounded-xl uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
+                >
+                  ✏️ Editar
+                </button>
+              )}
+              
+              <button
+                type="button"
+                onClick={() => onEditarStock(producto)}
+                className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black py-2 rounded-xl uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
+              >
+                📏 Stock
+              </button>
+            </div>
+
+            {producto.estado === "ACTIVO" ? (
+              <button
+                type="button"
+                onClick={() => onOcultarProducto(producto.id)}
+                className="w-full bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 text-[10px] font-black py-1.5 rounded-xl uppercase cursor-pointer transition-colors"
+              >
+                🗄️ Archivar Modelo
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onActivarProducto(producto.id)}
+                className="w-full bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 text-[10px] font-black py-1.5 rounded-xl uppercase cursor-pointer transition-colors"
+              >
+                👀 Desarchivar Vitrina
+              </button>
+            )}
+          </div>
+        ) : (
+          /* Botón Estándar de Compra para Clientes */
           <button 
-            disabled={esInactivo}
-            onClick={(e) => {
-              e.stopPropagation(); 
-              onEditarStock(producto);
-            }}
-            className={`w-1/2 font-bold text-[11px] py-2 rounded-xl uppercase tracking-wider transition-colors text-center ${
-              esInactivo 
-                ? 'bg-neutral-100 text-neutral-300 border border-neutral-200 cursor-not-allowed'
-                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 cursor-pointer'
-            }`}
+            type="button" 
+            onClick={() => alSeleccionar(producto)} 
+            className="w-full bg-neutral-900 text-white font-bold text-xs py-2.5 rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer uppercase tracking-wider"
           >
-            ✏️ Stock
+            Ver Detalles
           </button>
-          
-          {esInactivo ? (
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                if (window.confirm(`¿Deseas reactivar "${producto.nombre}"?`)) {
-                  onActivarProducto(producto.id);
-                }
-              }}
-              className="w-1/2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-[11px] py-2 rounded-xl uppercase tracking-wider transition-colors cursor-pointer text-center"
-            >
-              🔄 Activar
-            </button>
-          ) : (
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                if (window.confirm(`¿Estás seguro de que deseas ocultar "${producto.nombre}"?`)) {
-                  onOcultarProducto(producto.id);
-                }
-              }}
-              className="w-1/2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-[11px] py-2 rounded-xl uppercase tracking-wider transition-colors cursor-pointer text-center"
-            >
-              🗑️ Ocultar
-            </button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
     </div>
   );

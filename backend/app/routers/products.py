@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import List, Optional
@@ -11,211 +11,178 @@ router = APIRouter(
     tags=["Productos"]
 )
 
-# Esquema base para la creación de productos
+# =============================================================================
+# 📋 ESQUEMAS DE VALIDACIÓN PYDANTIC
+# =============================================================================
 class ProductoCreate(BaseModel):
     nombre: str
-    descripcion: Optional[str] = None
     precio_base: float
-    porcentaje_descuento: Optional[int] = 0
-    precio_final: Optional[float] = None
-    marca_id: int
-    categoria_id: int
-    tallas_iniciales: List[dict]
+    porcentaje_descuento: Optional[float] = 0.0
+    descripcion: Optional[str] = None
+    marca_id: Optional[int] = None
+    categoria_id: Optional[int] = None
+
 
 # =============================================================================
-# 🌐 1. ENDPOINT PÚBLICO: BUSCAR / LISTAR FILTRADO
+# 🔍 ENDPOINT: BUSCAR Y FILTRAR CATÁLOGO (ACTUALIZADO CON MAPEO MULTIMEDIA)
 # =============================================================================
-@router.get("/buscar", summary="Catálogo público filtrado por concurrencia")
+@router.get("/buscar", summary="Buscar productos con filtros de texto, talla y estado")
 def buscar_productos(
     q: Optional[str] = None,
     talla: Optional[str] = None,
-    estado: Optional[str] = "ACTIVO",
+    estado: str = "ACTIVO",
     db: Session = Depends(get_db)
 ):
-    query = db.query(Producto).options(
-        joinedload(Producto.marca),
-        joinedload(Producto.categoria),
-        joinedload(Producto.variantes_color).joinedload(VarianteColor.imagenes),
-        joinedload(Producto.variantes_color).joinedload(VarianteColor.tallares_stock)
-    ).filter(Producto.estado == estado)
+    """
+    Realiza una consulta elástica sobre MySQL inyectando cargas profundas (joinedload)
+    para traer las marcas, categorías, variantes, stock e imágenes en un solo viaje.
+    """
+    try:
+        query = db.query(Producto).options(
+            joinedload(Producto.marca),
+            joinedload(Producto.categoria),
+            joinedload(Producto.variantes_color).joinedload(VarianteColor.tallares_stock),
+            # 🌟 SOLUCIÓN A LAS FOTOS: Trae la relación inversa de imágenes asociadas
+            joinedload(Producto.variantes_color).joinedload(VarianteColor.imagenes) 
+        ).filter(Producto.estado == estado.upper())
 
-    if q:
-        query = query.filter(Producto.nombre.ilike(f"%{q}%"))
+        if q:
+            query = query.filter(Producto.nombre.like(f"%{q}%"))
 
-    if talla:
-        query = query.join(Producto.variantes_color) \
-                     .join(VarianteColor.tallares_stock) \
-                     .filter(TallaStock.talla == talla, TallaStock.stock > 0)
+        if talla:
+            # Si se filtra por talla, cruzamos la matriz mapeando stock existente
+            query = query.join(Producto.variantes_color)\
+                         .join(VarianteColor.tallares_stock)\
+                         .filter(TallaStock.talla == talla, TallaStock.stock > 0)
 
-    return query.all()
+        return query.all()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fallo en el motor analítico de búsqueda: {str(e)}"
+        )
+
 
 # =============================================================================
-# 🛡️ 2. ENDPOINT PROTEGIDO: CREAR NUEVA ZAPATILLA
+# ➕ ENDPOINT: REGISTRAR NUEVA ZAPATILLA (ADMIN)
 # =============================================================================
-@router.post("/", status_code=status.HTTP_201_CREATED, summary="Registrar zapatilla en el catálogo")
+@router.post("/", status_code=status.HTTP_201_CREATED, summary="Añadir calzado al catálogo")
 def crear_producto(
     payload: ProductoCreate, 
-    db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin)
+    db: Session = Depends(get_db),
+    admin_actual = Depends(verificar_admin)
 ):
     try:
-        p_final = payload.precio_final or (payload.precio_base * (1 - (payload.porcentaje_descuento / 100)))
-
-        nuevo_prod = Producto(
+        nuevo_producto = Producto(
             nombre=payload.nombre,
-            descripcion=payload.descripcion,
             precio_base=payload.precio_base,
             porcentaje_descuento=payload.porcentaje_descuento,
-            precio_final=round(p_final, 2),
+            descripcion=payload.descripcion,
             marca_id=payload.marca_id,
             categoria_id=payload.categoria_id,
             estado="ACTIVO"
         )
-        db.add(nuevo_prod)
+        db.add(nuevo_producto)
         db.commit()
-        db.refresh(nuevo_prod)
-
-        nueva_variante = VarianteColor(producto_id=nuevo_prod.id, color_nombre="Estándar")
-        db.add(nueva_variante)
-        db.commit()
-        db.refresh(nueva_variante)
-
-        for item in payload.tallas_iniciales:
-            talla_val = item.get("talla") or item.get("size")
-            stock_val = item.get("nuevo_stock") or item.get("stock") or item.get("cantidad") or 0
-            stock_talla = TallaStock(
-                variante_color_id=nueva_variante.id,
-                talla=str(talla_val),
-                stock=int(stock_val)
-            )
-            db.add(stock_talla)
-        
-        db.commit()
-        return {"status": "Éxito", "producto_id": nuevo_prod.id, "mensaje": "Zapatilla e inventario inicializados."}
-    
+        db.refresh(nuevo_producto)
+        return nuevo_producto
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error en la persistencia del producto: {str(e)}")
-
-# =============================================================================
-# 🛡️ 3. ENDPOINT PROTEGIDO: ACTUALIZAR STOCK (PROCESAMIENTO ITERATIVO DE ARRAYS)
-# =============================================================================
-@router.put("/{id}/stock")
-@router.post("/{id}/stock")
-async def editar_stock(
-    id: int, 
-    request: Request, 
-    db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin)
-):
-    """
-    Recibe el payload crudo del cliente. Si es un elemento único o un array 
-    de modificaciones de tallas, los unifica en un bucle iterable para guardarlos.
-    """
-    try:
-        payload = await request.json()
-    except Exception:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Error formativo: El cuerpo enviado no es un JSON válido o está vacío."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No se pudo asentar el producto en MySQL: {str(e)}"
         )
 
-    # 🌟 ARQUITECTURA ELÁSTICA: Si es un dict único lo volvemos lista, si ya es una lista la dejamos pasar
-    items_a_procesar = payload if isinstance(payload, list) else [payload]
-
-    variante = db.query(VarianteColor).filter(VarianteColor.producto_id == id).first()
-    if not variante:
-        raise HTTPException(status_code=404, detail="No se encontró una variante de color para este producto.")
-
-    registros_actualizados = 0
-
-    # Procesamos de forma secuencial cada bloque de actualización del array
-    for item in items_a_procesar:
-        talla = item.get("talla") or item.get("size") or item.get("talla_id")
-        
-        cantidad_final = None
-        for llave in ["nuevo_stock", "stock", "cantidad", "nuevoStock", "value"]:
-            if llave in item and item[llave] is not None:
-                cantidad_final = item[llave]
-                break
-
-        # Si viene un nodo vacío o incompleto en el array, lo saltamos de forma segura
-        if not talla or cantidad_final is None:
-            continue
-
-        try:
-            talla_str = str(talla)
-            cantidad_int = int(cantidad_final)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Error de tipado: Las unidades de stock o la talla no pudieron convertirse a valores válidos."
-            )
-
-        if cantidad_int < 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inconsistencia: El volumen físico de existencias no puede ser un valor negativo."
-            )
-
-        # Buscamos el registro específico de la talla para el producto en MySQL
-        registro_stock = db.query(TallaStock).filter(
-            TallaStock.variante_color_id == variante.id,
-            TallaStock.talla == talla_str
-        ).first()
-
-        if not registro_stock:
-            # Creación en caliente si la talla no existía previamente en el catálogo
-            registro_stock = TallaStock(
-                variante_color_id=variante.id,
-                talla=talla_str,
-                stock=cantidad_int
-            )
-            db.add(registro_stock)
-        else:
-            # Modificación de las existencias físicas
-            registro_stock.stock = cantidad_int
-        
-        registros_actualizados += 1
-
-    # Confirmamos la transacción completa de forma segura
-    db.commit()
-    
-    return {
-        "status": "Éxito", 
-        "mensaje": f"Se procesaron con éxito {registros_actualizados} modificaciones de inventario."
-    }
 
 # =============================================================================
-# 🛡️ 4. ENDPOINT PROTEGIDO: ARCHIVAR / OCULTAR PRODUCTO (Borrado Lógico)
+# ✏️ ENDPOINT PROTEGIDO (HU-15): ACTUALIZACIÓN COMPLETA DE PRODUCTO (ADMIN)
 # =============================================================================
-@router.delete("/{id}", summary="Ocultar zapatilla del feed público")
+@router.put("/{producto_id}", summary="Modificar ficha técnica y precios de un calzado")
+def actualizar_producto(
+    producto_id: int,
+    payload: ProductoCreate,
+    db: Session = Depends(get_db),
+    admin_actual = Depends(verificar_admin)
+):
+    """
+    Busca de forma atómica el ID del calzado seleccionado y sobreescribe sus
+    atributos comerciales, forzando la sincronización inmediata en MySQL.
+    """
+    try:
+        producto = db.query(Producto).filter(Producto.id == producto_id).first()
+        
+        if not producto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"El calzado con ID #{producto_id} no se encuentra registrado en el sistema."
+            )
+
+        # Mutación de atributos mapeados
+        producto.nombre = payload.nombre
+        producto.precio_base = payload.precio_base
+        producto.porcentaje_descuento = payload.porcentaje_descuento
+        producto.descripcion = payload.descripcion
+        producto.marca_id = payload.marca_id
+        producto.categoria_id = payload.categoria_id
+
+        db.commit()
+        db.refresh(producto)
+        
+        return {
+            "status": "Éxito",
+            "producto_id": producto.id,
+            "mensaje": "Ficha técnica del calzado actualizada correctamente en la base de datos."
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fallo crítico en el motor transaccional al editar producto: {str(e)}"
+        )
+
+
+# =============================================================================
+# 🗄️ ENDPOINT: OCULTAR/ARCHIVAR PRODUCTO (SOFT DELETE)
+# =============================================================================
+@router.delete("/{producto_id}", summary="Cambiar estado de zapatilla a INACTIVO")
 def ocultar_producto(
-    id: int, 
-    db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin)
+    producto_id: int, 
+    db: Session = Depends(get_db),
+    admin_actual = Depends(verificar_admin)
 ):
-    producto = db.query(Producto).filter(Producto.id == id).first()
-    if not producto:
-        raise HTTPException(status_code=404, detail="El modelo especificado no existe.")
+    try:
+        producto = db.query(Producto).filter(Producto.id == producto_id).first()
+        if not producto:
+            raise HTTPException(status_code=404, detail="Calzado no encontrado.")
+        
+        producto.estado = "INACTIVO"
+        db.commit()
+        return {"status": "Éxito", "mensaje": "Zapatilla retirada de la vitrina pública con éxito."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
-    producto.estado = "INACTIVO"
-    db.commit()
-    return {"status": "Éxito", "mensaje": "El producto ha sido archivado y ocultado del catálogo."}
 
 # =============================================================================
-# 🛡️ 5. ENDPOINT PROTEGIDO: REACTIVAR PRODUCTO
+# 👀 ENDPOINT: ACTIVAR/DESARCHIVAR PRODUCTO
 # =============================================================================
-@router.post("/{id}/activar", summary="Restaurar zapatilla al feed público")
+@router.post("/{producto_id}/activar", summary="Cambiar estado de zapatilla a ACTIVO")
 def activar_producto(
-    id: int, 
-    db: Session = Depends(get_db), 
-    admin: dict = Depends(verificar_admin)
+    producto_id: int, 
+    db: Session = Depends(get_db),
+    admin_actual = Depends(verificar_admin)
 ):
-    producto = db.query(Producto).filter(Producto.id == id).first()
-    if not producto:
-        raise HTTPException(status_code=404, detail="El modelo especificado no existe.")
-
-    producto.estado = "ACTIVO"
-    db.commit()
-    return {"status": "Éxito", "mensaje": "El producto vuelve a estar visible para los clientes."}
+    try:
+        producto = db.query(Producto).filter(Producto.id == producto_id).first()
+        if not producto:
+            raise HTTPException(status_code=404, detail="Calzado no encontrado.")
+        
+        producto.estado = "ACTIVO"
+        db.commit()
+        return {"status": "Éxito", "mensaje": "Zapatilla activada y desplegada nuevamente en la vitrina."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

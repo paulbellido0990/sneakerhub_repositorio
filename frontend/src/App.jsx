@@ -47,6 +47,17 @@ export default function App() {
   // 💳 ESTADO VALIDACIÓN DE COMPROBANTE ANTIFRAUDE (HU-14)
   const [codigoPago, setCodigoPago] = useState('');
 
+  // ✏️ ESTADOS DE EDICIÓN COMPLETA DE PRODUCTO (HU-15)
+  const [productoParaEditar, setProductoParaEditar] = useState(null);
+  const [formEdicion, setFormEdicion] = useState({
+    nombre: '',
+    precio_base: '',
+    porcentaje_descuento: '',
+    descripcion: '',
+    marca_id: '',
+    categoria_id: ''
+  });
+
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
 
@@ -65,7 +76,7 @@ export default function App() {
   useEffect(() => {
     const tokenGuardado = localStorage.getItem('token');
     const rolGuardado = localStorage.getItem('rol');
-    const fontNameGuardado = localStorage.getItem('nombre_usuario');
+    const nombreGuardado = localStorage.getItem('nombre_usuario');
     
     if (!tokenGuardado) {
       setToken(null);
@@ -79,7 +90,7 @@ export default function App() {
       .then(() => {
         setToken(tokenGuardado);
         setRol(rolGuardado);
-        setNombreUsuario(fontNameGuardado);
+        setNombreUsuario(nombreGuardado);
       })
       .catch(() => {
         localStorage.removeItem('token');
@@ -89,15 +100,14 @@ export default function App() {
         setRol(null);
         setNombreUsuario(null);
       })
-      .finally(() => setValidatingSession(false));
-      const setValidatingSession = (val) => setValidandoSesion(val);
+      .finally(() => setValidandoSesion(false));
   }, []);
 
   useEffect(() => {
     setCargando(true);
     setError(null);
     
-    const modoOcultoActivo = (rol === 'admin') ? verOcultos : false;
+    const modoOcultoActivo = (rol === 'admin' ? verOcultos : false);
     const params = { estado: modoOcultoActivo ? 'INACTIVO' : 'ACTIVO' };
     
     if (busqueda) params.q = busqueda;
@@ -245,12 +255,9 @@ export default function App() {
     );
   };
 
-  // 🌟 FLUJO ACTUALIZADO CON ADICIÓN DE CÓDIGO DE OPERACIÓN (HU-14)
   const enviarPedidoWhatsApp = async () => {
     if (carrito.length === 0) return;
-    
-    // Criterio de Aceptación: Validación en caliente de campo obligatorio lleno
-    if (!codigoPago.trim()) {
+    if (!codigoPago.strip || !codigoPago.trim()) {
       alert("⚠️ Validación de Pago: Ingresa el código de operación de tu transferencia (Yape o Plin) antes de continuar.");
       return;
     }
@@ -258,7 +265,7 @@ export default function App() {
     try {
       const pedidoPayload = {
         nombre_cliente: nombreUsuario || "Cliente Web SneakerHub",
-        codigo_pago: codigoPago.trim(), // Inyectamos el string capturado
+        codigo_pago: codigoPago.trim(),
         detalles: carrito.map(item => ({
           producto_id: item.id,
           talla: item.talla,
@@ -269,7 +276,7 @@ export default function App() {
 
       await API.post('/pedidos/', pedidoPayload);
 
-      const CELULAR_TIENDA = "51900169073"; 
+      const CELULAR_TIENDA = "51999999999"; 
       let mensaje = `🚨 *¡Hola SneakerHub Ayacucho!* \n`;
       mensaje += `He realizado mi transferencia. Aquí tienes el detalle de mi compra:\n\n`;
       carrito.forEach((item) => {
@@ -279,7 +286,7 @@ export default function App() {
       mensaje += `🔍 *CÓDIGO DE OPERACIÓN YAPE/PLIN:* ${codigoPago.trim()}\n\n¿Me confirman el despacho de mi pedido?`;
 
       setCarrito([]);
-      setCodigoPago(''); // Limpiamos el búfer del formulario
+      setCodigoPago('');
       setMenuCarritoAbierto(false);
       window.open(`https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`, '_blank');
     } catch (err) {
@@ -297,6 +304,44 @@ export default function App() {
       if (verDashboardBI) setVerDashboardBI(false); setTimeout(() => setVerDashboardBI(true), 50);
     } catch (err) {
       alert(`Error al actualizar estado: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
+  // ✏️ GESTIÓN DE EDICIÓN: Precarga elástica de datos (HU-15)
+  const handleAbrirEdicionProducto = (producto) => {
+    setProductoParaEditar(producto);
+    setFormEdicion({
+      nombre: producto.nombre || '',
+      precio_base: producto.precio_base || '',
+      porcentaje_descuento: producto.porcentaje_descuento || 0,
+      descripcion: producto.descripcion || '',
+      marca_id: producto.marca_id || producto.marca?.id || '',
+      categoria_id: producto.categoria_id || producto.categoria?.id || ''
+    });
+  };
+
+  const handleGuardarEdicionProducto = async (e) => {
+    e.preventDefault();
+    const tokenGuardado = localStorage.getItem('token');
+    try {
+      await API.put(`/productos/${productoParaEditar.id}`, {
+        nombre: formEdicion.nombre,
+        precio_base: parseFloat(formEdicion.precio_base),
+        porcentaje_descuento: parseFloat(formEdicion.porcentaje_descuento || 0),
+        descripcion: formEdicion.descripcion,
+        marca_id: formEdicion.marca_id ? parseInt(formEdicion.marca_id) : null,
+        categoria_id: formEdicion.categoria_id ? parseInt(formEdicion.categoria_id) : null
+      }, {
+        headers: { Authorization: `Bearer ${tokenGuardado}` }
+      });
+
+      // Gatillamos el truco de refresco de catálogo existente
+      setBusqueda(prev => prev + ' ');
+      setTimeout(() => setBusqueda(prev => prev.trim()), 50);
+
+      setProductoParaEditar(null);
+    } catch (err) {
+      alert(`Error al guardar cambios: ${err.response?.data?.detail || err.message}`);
     }
   };
 
@@ -479,6 +524,8 @@ export default function App() {
                 onEditarStock={rol === 'admin' ? (p) => setProductoParaStock(p) : null} 
                 onOcultarProducto={rol === 'admin' ? handleOcultarProducto : null} 
                 onActivarProducto={rol === 'admin' ? handleActivarProducto : null} 
+                // 🌟 MIGRACIÓN HU-15: Mapeamos la función abridora de edición hacia el ProductCard
+                onEditarProducto={rol === 'admin' ? handleAbrirEdicionProducto : null}
               />
             ))}
           </div>
@@ -514,7 +561,7 @@ export default function App() {
         </div>
       )}
 
-      {/* DRAWER LATERAL: MI PEDIDO (ACTUALIZADO HU-14 CON CAMPO DE CÓDIGO) */}
+      {/* DRAWER LATERAL: MI PEDIDO */}
       {menuCarritoAbierto && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-end">
           <div className="absolute inset-0" onClick={() => setMenuCarritoAbierto(false)}></div>
@@ -543,7 +590,6 @@ export default function App() {
               </div>
             </div>
             
-            {/* 🌟 FORMULARIO HU-14 INTEGRADO: Entrada controlada de Código de Operación */}
             <div className="border-t border-neutral-100 pt-4">
               {carrito.length > 0 && (
                 <div className="mb-4 bg-neutral-50 p-3.5 rounded-2xl border border-neutral-200/60">
@@ -553,7 +599,7 @@ export default function App() {
                     maxLength="12"
                     placeholder="Ej. 02948174"
                     value={codigoPago}
-                    onChange={(e) => setCodigoPago(e.target.value.replace(/\D/g, ''))} // Captura elástica solo números
+                    onChange={(e) => setCodigoPago(e.target.value.replace(/\D/g, ''))} 
                     className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold focus:outline-none focus:border-neutral-900 text-neutral-800 tracking-widest"
                   />
                   <span className="text-[9px] text-neutral-400 font-medium mt-1 block">Realiza tu pago antes de gatillar la confirmación por WhatsApp.</span>
@@ -567,7 +613,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN - CON DESPLIEGUE HU-14 DE CÓDIGO DE OPERACIÓN) */}
+      {/* MODAL: AUDITORÍA DE PEDIDOS (ADMIN) */}
       {modalPedidosAbierto && rol === 'admin' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[85vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
@@ -607,7 +653,6 @@ export default function App() {
                               <td className="px-4 py-3.5 text-neutral-500">{new Date(order.fecha_pedido).toLocaleString('es-PE')}</td>
                               <td className="px-4 py-3.5">
                                 <p className="font-bold text-neutral-900">{order.nombre_cliente}</p>
-                                {/* 🌟 VISUALIZACIÓN HU-14: Código de pago expuesto para cruce bancario inmediato */}
                                 <p className="text-[10px] font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md mt-0.5 font-black tracking-wider inline-block">📲 OP: {order.codigo_pago || "N/A"}</p>
                               </td>
                               <td className="px-4 py-3.5 text-center font-bold text-neutral-500 bg-neutral-50/30">{order.detalles?.reduce((sum, d) => sum + d.cantidad, 0)} u.</td>
@@ -723,7 +768,7 @@ export default function App() {
         </div>
       )}
 
-      {/* VISTA DEL MODAL: HISTORIAL PROPIO DE COMPRAS (CLIENTE CON EXPOSICIÓN HU-14) */}
+      {/* VISTA DEL MODAL: HISTORIAL PROPIO DE COMPRAS (CLIENTE) */}
       {modalMisPedidosAbierto && token && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[80vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
@@ -757,7 +802,6 @@ export default function App() {
                             <div className="text-xs">
                               <p className="text-neutral-400 font-medium">{new Date(pedido.fecha_pedido).toLocaleString('es-PE')}</p>
                               <p className="text-neutral-500 font-bold mt-0.5">Volumen: {pedido.detalles?.reduce((s, d) => s + d.cantidad, 0)} u.</p>
-                              {/* 🌟 HU-14: El cliente también puede recordar con qué código pagó */}
                               <p className="text-[10px] font-mono text-neutral-400 mt-1">📲 Operación: {pedido.codigo_pago}</p>
                             </div>
                           </div>
@@ -803,6 +847,60 @@ export default function App() {
               )}
             </div>
             <div className="border-t border-neutral-100 pt-3 mt-4 text-center"><p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">¡Gracias por confiar en SneakerHub Ayacucho! S/. Pen</p></div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 VISTA INTEGRADAS DEL MODAL: EDICIÓN COMPLETA FICHA TÉCNICA (HU-15 ADMIN) */}
+      {productoParaEditar && rol === 'admin' && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col p-6 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-neutral-200 pb-3 mb-4">
+              <div>
+                <h3 className="text-base font-black uppercase tracking-tight text-neutral-900">✏️ Editar Ficha de Calzado</h3>
+                <p className="text-[11px] text-neutral-400">Modifica los valores comerciales e inventario maestro del ID #{productoParaEditar.id}</p>
+              </div>
+              <button onClick={() => setProductoParaEditar(null)} className="bg-neutral-100 text-neutral-800 font-bold h-7 w-7 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicionProducto} className="grow overflow-y-auto space-y-4 pr-1">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase text-neutral-500">Nombre del Modelo:</label>
+                <input required type="text" value={formEdicion.nombre} onChange={(e) => setFormEdicion({...formEdicion, nombre: e.target.value})} className="border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-neutral-950 bg-neutral-50"/>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black uppercase text-neutral-500">Precio Base (S/.):</label>
+                  <input required type="number" step="0.01" min="1" value={formEdicion.precio_base} onChange={(e) => setFormEdicion({...formEdicion, precio_base: e.target.value})} className="border border-neutral-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:border-neutral-950 bg-neutral-50"/>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black uppercase text-neutral-500">Descuento Real (%):</label>
+                  <input required type="number" min="0" max="100" value={formEdicion.porcentaje_descuento} onChange={(e) => setFormEdicion({...formEdicion, porcentaje_descuento: e.target.value})} className="border border-neutral-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:border-neutral-950 bg-neutral-50"/>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black uppercase text-neutral-500">ID Marca Fabricante:</label>
+                  <input type="number" placeholder="Ej. 1" value={formEdicion.marca_id} onChange={(e) => setFormEdicion({...formEdicion, marca_id: e.target.value})} className="border border-neutral-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:border-neutral-950 bg-neutral-50"/>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-black uppercase text-neutral-500">ID Categoría Calzado:</label>
+                  <input type="number" placeholder="Ej. 2" value={formEdicion.categoria_id} onChange={(e) => setFormEdicion({...formEdicion, categoria_id: e.target.value})} className="border border-neutral-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:border-neutral-950 bg-neutral-50"/>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase text-neutral-500">Descripción Técnica del Producto:</label>
+                <textarea rows="3" value={formEdicion.descripcion} onChange={(e) => setFormEdicion({...formEdicion, descripcion: e.target.value})} className="border border-neutral-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-neutral-950 bg-neutral-50 resize-none placeholder-neutral-300" placeholder="Materiales, amortiguacion y detalles estéticos..."/>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button type="button" onClick={() => setProductoParaEditar(null)} className="w-1/2 border border-neutral-200 text-neutral-600 font-bold text-xs py-3 rounded-xl uppercase tracking-wider hover:bg-neutral-50 cursor-pointer">Cancelar</button>
+                <button type="submit" className="w-1/2 bg-neutral-900 text-white font-bold text-xs py-3 rounded-xl uppercase tracking-wider hover:bg-neutral-800 cursor-pointer">Guardar Cambios</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
