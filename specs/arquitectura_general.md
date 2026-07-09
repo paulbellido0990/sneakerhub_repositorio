@@ -53,6 +53,32 @@ sneakerhub/
 └── specs/                         # Artefactos de Ingeniería y Especificación Técnica (Specs)
 ```
 
+### 💻 1.1 Arquitectura de Componentes del Cliente (React SPA)
+
+La organización interna del directorio `frontend/src/components` está desacoplada de forma modular para responder de manera asíncrona y reactiva a los estados del backend, aislando las responsabilidades visuales del renderizado de datos.
+
+```text
+frontend/src/components/
+├── __tests__/                 # Suite de pruebas unitarias de UI y aserciones
+├── FormularioProducto.jsx     # Panel de inserción y edición de calzados (Admin)
+├── Login.jsx                  # Interfaz perimetral de acceso y captura de sesión
+├── ModalEditarStock.jsx       # Control emergente para inyección de inventario por tallas
+└── ProductCard.jsx            # Tarjeta dinámica de exhibición comercial en vitrina
+```
+
+#### 📊 Matriz de Responsabilidades de Componentes UI
+
+| Componente `.jsx` | Propósito Técnico | HUs Vinculadas |
+| :--- | :--- | :--- |
+| **`Login.jsx`** | Intercepta las credenciales en texto plano, despacha la solicitud de red y almacena la firma JWT localmente. | HU-07 (Autenticación) |
+| **`ProductCard.jsx`** | Mapea las propiedades del catálogo (imágenes, precios netos calculados y etiquetas de descuento elásticas). | HU-03 (Vitrina) & HU-04 (Búsqueda) |
+| **`FormularioProducto.jsx`** | Formulario administrativo controlado para la mutación masiva de fichas técnicas y porcentajes promocionales. | HU-02 (Registro) & HU-12 (Descuentos) |
+| **`ModalEditarStock.jsx`** | Ventana modal síncrona que interactúa con la matriz relacional para realizar cargas físicas iniciales y reajustes. | HU-08 (Matriz de Stock) & HU-15 (Estados) |
+
+#### 🛡️ Calidad de Código y Directivas Estáticas del Cliente
+* **Aseguramiento de Calidad (`__tests__/`):** Aloja las pruebas unitarias encargadas de auditar el comportamiento del árbol DOM de React frente a respuestas simuladas de la API.
+* **Optimización con Oxlint (`.oxlintrc.json`):** El proyecto sustituye las herramientas tradicionales por **Oxlint**, ejecutando un análisis estático de código ultra veloz basado en Rust para erradicar variables huérfanas, bucles infinitos en efectos secundarios o importaciones redundantes antes del empaquetado final de Vite.
+
 ---
 
 ## 🛡️ 2. Control de Middleware Perimetral y Reglas CORS
