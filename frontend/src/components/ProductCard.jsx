@@ -44,7 +44,7 @@ export default function ProductCard({
       </div>
 
       {/* Cuerpo Informativo */}
-      <div className="p-4 flex-grow flex flex-col justify-between gap-3">
+      <div className="p-4 grow flex flex-col justify-between gap-3">
         <div>
           <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider font-mono">
             {producto.marca?.nombre || "Premium"} • {producto.categoria?.nombre || "Zapatilla"}

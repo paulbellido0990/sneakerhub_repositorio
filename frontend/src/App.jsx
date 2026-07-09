@@ -276,7 +276,7 @@ export default function App() {
 
       await API.post('/pedidos/', pedidoPayload);
 
-      const CELULAR_TIENDA = "51999999999"; 
+      const CELULAR_TIENDA = "51900169073"; 
       let mensaje = `🚨 *¡Hola SneakerHub Ayacucho!* \n`;
       mensaje += `He realizado mi transferencia. Aquí tienes el detalle de mi compra:\n\n`;
       carrito.forEach((item) => {

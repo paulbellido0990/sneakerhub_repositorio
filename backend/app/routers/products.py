@@ -186,3 +186,65 @@ def activar_producto(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+# =============================================================================
+# 📦 ESQUEMAS ADICIONALES PARA MATRIZ DE INVENTARIO
+# =============================================================================
+class VariantStockCreate(BaseModel):
+    producto_id: int
+    talla: str
+    stock_inicial: int
+
+# =============================================================================
+# 📊 ENDPOINT PROTEGIDO (HU-08): ASIGNAR MATRIZ DE STOCK INICIAL (ADMIN)
+# =============================================================================
+@router.post("/variants/stock", status_code=status.HTTP_201_CREATED, summary="Vincular stock físico a una talla específica")
+def asignar_stock_talla(
+    payload: VariantStockCreate,
+    db: Session = Depends(get_db),
+    admin_actual = Depends(verificar_admin)
+):
+    """
+    Busca o inicializa una variante base para el calzado seleccionado y asienta
+    las existencias físicas por talla en la matriz relacional de MySQL.
+    """
+    try:
+        # 1. Verificar integridad: El producto debe existir en el catálogo
+        producto = db.query(Producto).filter(Producto.id == payload.producto_id).first()
+        if not producto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No se puede asignar stock. El producto #{payload.producto_id} no existe."
+            )
+
+        # 2. Control de flujo elástico: Buscamos si el producto ya tiene una variante de color base
+        variante = db.query(VarianteColor).filter(VarianteColor.producto_id == payload.producto_id).first()
+        if not variante:
+            # Si no existe, creamos una variante estándar por defecto para colgar las tallas
+            variante = VarianteColor(producto_id=payload.producto_id, color="Estándar")
+            db.add(variante)
+            db.commit()
+            db.refresh(variante)
+
+        # 3. Insertar el registro físico de stock en la tabla relacional (TallaStock)
+        nuevo_stock = TallaStock(
+            variante_color_id=variante.id,  # Vinculación profunda de tu matriz
+            talla=payload.talla,
+            stock=payload.stock_inicial
+        )
+        
+        db.add(nuevo_stock)
+        db.commit()
+        db.refresh(nuevo_stock)
+        
+        # Retornamos la entidad mapeada para que Postman capture el id y el stock
+        return nuevo_stock
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fallo en el motor de inventarios al asentar stock en MySQL: {str(e)}"
+        )
