@@ -52,7 +52,7 @@ export default function App() {
   const [formEdicion, setFormEdicion] = useState({
     nombre: '',
     precio_base: '',
-    porcentaje_descuento: '',
+    percentage_descuento: '',
     descripcion: '',
     marca_id: '',
     categoria_id: ''
@@ -257,7 +257,9 @@ export default function App() {
 
   const enviarPedidoWhatsApp = async () => {
     if (carrito.length === 0) return;
-    if (!codigoPago.strip || !codigoPago.trim()) {
+    
+    // 🛡️ CORREGIDO: Remoción de la propiedad .strip de Python
+    if (!codigoPago || !codigoPago.trim()) {
       alert("⚠️ Validación de Pago: Ingresa el código de operación de tu transferencia (Yape o Plin) antes de continuar.");
       return;
     }
@@ -524,7 +526,6 @@ export default function App() {
                 onEditarStock={rol === 'admin' ? (p) => setProductoParaStock(p) : null} 
                 onOcultarProducto={rol === 'admin' ? handleOcultarProducto : null} 
                 onActivarProducto={rol === 'admin' ? handleActivarProducto : null} 
-                // 🌟 MIGRACIÓN HU-15: Mapeamos la función abridora de edición hacia el ProductCard
                 onEditarProducto={rol === 'admin' ? handleAbrirEdicionProducto : null}
               />
             ))}
@@ -602,7 +603,7 @@ export default function App() {
                     onChange={(e) => setCodigoPago(e.target.value.replace(/\D/g, ''))} 
                     className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold focus:outline-none focus:border-neutral-900 text-neutral-800 tracking-widest"
                   />
-                  <span className="text-[9px] text-neutral-400 font-medium mt-1 block">Realiza tu pago antes de gatillar la confirmación por WhatsApp.</span>
+                  <span className="text-[9px] text-neutral-400 font-medium mt-1 block">Realiza tu pago antes de gatillar la confirmation por WhatsApp.</span>
                 </div>
               )}
 
