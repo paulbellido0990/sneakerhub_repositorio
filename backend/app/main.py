@@ -14,7 +14,6 @@ app = FastAPI(
 )
 
 # Configurar las reglas de origen cruzado (CORS)
-# Agregamos tu dominio de Vercel de manera limpia (sin barra diagonal '/' al final)
 origins = [
     "http://localhost:5173",  
     "http://127.0.0.1:5173",
@@ -31,9 +30,11 @@ app.add_middleware(
 
 # Incluir los enrutadores modulares del sistema
 app.include_router(products_router)
-app.include_router(auth_router, prefix="/auth", tags=["Autenticación"]) # 🌟 CORREGIDO: Agrupación perimetral para compatibilidad con la suite de Postman
 app.include_router(orders_router) 
 app.include_router(reports_router) # 🌟 2. ACOPLAR EL CANAL DE TELEMETRÍA DE BAJO STOCK (HU-08)
+
+# IMPORTANTE: Se incluye sin prefijo extra porque el router de auth ya maneja sus propios endpoints (/api/auth)
+app.include_router(auth_router)
 
 @app.get("/", tags=["Verificación Base"])
 def verificar_servidor():
