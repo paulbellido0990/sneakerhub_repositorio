@@ -1,9 +1,13 @@
 import axios from 'axios';
 
-// Configurar la URL base apuntando al puerto de tu servidor FastAPI en Python
+// Si existe la variable en Vercel, la usa y le añade '/api'. Si no, usa localhost para tu laptop.
+const baseURL = import.meta.env.VITE_API_BASE_URL 
+    ? `${import.meta.env.VITE_API_BASE_URL}/api` 
+    : 'http://127.0.0.1:8000/api';
+
 const API = axios.create({
-    baseURL: 'http://127.0.0.1:8000/api',
-    timeout: 5000, // Detener la petición si el servidor no responde en 5 segundos
+    baseURL: baseURL,
+    timeout: 15000, // 15 segundos de tolerancia por si Render está "despertando" de su cold start
 });
 
 export default API;

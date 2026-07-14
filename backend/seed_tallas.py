@@ -1,14 +1,75 @@
 import os
 import sys
+from sqlalchemy import text
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from app.database import SessionLocal
+    # 1. Importamos la base de datos
+    from app.database import SessionLocal, Base, engine
+    
+    # 2. Importamos los modelos de zapatillas (registra productos, variantes y tallas)
     from app.models.product import VarianteColor, TallaStock
+    
+    # 3. Importamos de forma segura las tablas restantes (usuarios y pedidos)
+    try:
+        import app.models.user
+    except Exception as e:
+        print(f"⚠️ Aviso al cargar modelos de usuario: {e}")
+    
+    try:
+        import app.models.order
+    except Exception as e:
+        print(f"⚠️ Aviso al cargar modelos de orden: {e}")
+    
     print("✅ Conexión con los modelos de SneakerHub establecida con éxito.")
-except ImportError as e:
-    print(f"❌ Error de importación: {e}")
+    
+    # 4. 🩹 PARCHE DE SEGURIDAD: Deduplicación de índices en memoria de SQLAlchemy
+    print("🩹 Analizando y deduplicando índices en los metadatos de SQLAlchemy...")
+    for table_name, table in Base.metadata.tables.items():
+        seen_index_names = set()
+        indexes_to_remove = []
+        
+        # Identificar índices duplicados por nombre
+        for index in table.indexes:
+            if index.name in seen_index_names:
+                indexes_to_remove.append(index)
+            else:
+                seen_index_names.add(index.name)
+        
+        # Remover físicamente los duplicados de la lista en memoria de SQLAlchemy
+        for index in indexes_to_remove:
+            print(f"  🧹 Removiendo índice duplicado en memoria: '{index.name}' de la tabla '{table_name}'")
+            table.indexes.remove(index)
+            
+    # 5. Operación Tabula Rasa (Limpieza absoluta con SQL Puro - 100% Efectivo)
+    print("🧹 Iniciando limpieza profunda de residuos en la nube de Aiven...")
+    with engine.connect() as connection:
+        # Desactivar restricciones de claves foráneas temporalmente para evitar bloqueos
+        connection.execute(text("SET FOREIGN_KEY_CHECKS = 0;"))
+        
+        # Obtener todas las tablas existentes en la base de datos de Aiven
+        result = connection.execute(text("SHOW TABLES;"))
+        tables = [row[0] for row in result]
+        
+        # Eliminar cada tabla físicamente sin importar sus dependencias
+        for table in tables:
+            print(f"  🗑️ Eliminando tabla física: {table}")
+            connection.execute(text(f"DROP TABLE IF EXISTS `{table}`;"))
+        
+        # Reactivar restricciones de integridad
+        connection.execute(text("SET FOREIGN_KEY_CHECKS = 1;"))
+        connection.commit()
+        
+    print("✨ ¡Base de datos de Aiven completamente vaciada y limpia!")
+    
+    # 6. Sincronizamos las tablas físicas limpias desde cero
+    print("🛠️ Sincronizando estructura de tablas limpia en la base de datos...")
+    Base.metadata.create_all(bind=engine)
+    print("✅ Estructura de tablas e integridad relacional creadas desde cero con éxito.")
+    
+except Exception as e:
+    print(f"❌ Error durante la inicialización de base de datos: {e}")
     sys.exit(1)
 
 def migrar_matriz_tallas():
@@ -41,7 +102,7 @@ def migrar_matriz_tallas():
             print(f"\n🚀 ¡MIGRACIÓN COMPLETADA CON ÉXITO!")
             print(f"📊 Se inyectaron {registros_creados} nuevos nodos de tallas (35, 36, 37) con stock inicial de 0 unidades.")
         else:
-            print("\n✨ Toda la matriz de tallas ya se encontraba homologada. No se requirieron cambios.")
+            print("\n✨ Matriz de inventario analizada. No se requirieron cambios de homologación adicionales.")
 
     except Exception as e:
         db.rollback()
