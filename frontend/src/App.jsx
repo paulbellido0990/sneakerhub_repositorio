@@ -264,9 +264,39 @@ export default function App() {
       return;
     }
 
-    // 🛡️ FIX: Se abre la pestaña en blanco de forma síncrona (dentro del gesto de clic)
-    // para que el navegador no la bloquee como popup tras el await de la petición.
-    const ventanaWhatsApp = window.open('', '_blank');
+    // 🛡️ FIX: El mensaje solo depende del carrito (ya disponible), así que se abre
+    // la URL final de WhatsApp en una sola llamada síncrona dentro del gesto de clic.
+    // Abrir una pestaña en blanco y redirigirla luego con JS lo bloquean los adblockers
+    // (patrón típico de "popunder"); una llamada directa a window.open(url) no.
+    const CELULAR_TIENDA = "51900169073";
+    const lineaDivisoria = "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈";
+
+    const itemsTexto = carrito.map((item) =>
+      [
+        `👟 *${item.nombre}*`,
+        `   📏 Talla ${item.talla}   ×${item.cantidad}   —   S/. ${(item.precio * item.cantidad).toFixed(2)}`,
+      ].join("\n")
+    ).join(`\n${lineaDivisoria}\n`);
+
+    const mensaje = [
+      "🛍️ *SneakerHub Ayacucho — Nuevo Pedido*",
+      lineaDivisoria,
+      "¡Hola! Ya realicé mi transferencia. Este es el detalle de mi compra:",
+      "",
+      itemsTexto,
+      lineaDivisoria,
+      `💰 *Total transferido:* S/. ${totalCompra.toFixed(2)}`,
+      `🔐 *Código de operación (Yape/Plin):* ${codigoPago.trim()}`,
+      "",
+      "¿Me confirman el despacho de mi pedido? 🙌",
+    ].join("\n");
+
+    const urlWhatsApp = `https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`;
+    window.open(urlWhatsApp, '_blank');
+
+    setCarrito([]);
+    setCodigoPago('');
+    setMenuCarritoAbierto(false);
 
     try {
       const pedidoPayload = {
@@ -281,30 +311,8 @@ export default function App() {
       };
 
       await API.post('/pedidos/', pedidoPayload);
-
-      const CELULAR_TIENDA = "51900169073"; 
-      let mensaje = `🚨 *¡Hola SneakerHub Ayacucho!* \n`;
-      mensaje += `He realizado mi transferencia. Aquí tienes el detalle de mi compra:\n\n`;
-      carrito.forEach((item) => {
-        mensaje += `👟 *${item.nombre}* \n📏 *Talla:* ${item.talla} | *Cant:* ${item.cantidad}\n💵 *Subtotal:* S/. ${(item.precio * item.cantidad).toFixed(2)}\n-------------------------------------------\n`;
-      });
-      mensaje += `💰 *TOTAL TRANSFERIDO: S/. ${totalCompra.toFixed(2)}*\n`;
-      mensaje += `🔍 *CÓDIGO DE OPERACIÓN YAPE/PLIN:* ${codigoPago.trim()}\n\n¿Me confirman el despacho de mi pedido?`;
-
-      setCarrito([]);
-      setCodigoPago('');
-      setMenuCarritoAbierto(false);
-
-      const urlWhatsApp = `https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`;
-      if (ventanaWhatsApp) {
-        ventanaWhatsApp.location.href = urlWhatsApp;
-      } else {
-        // Si el navegador bloqueó incluso la ventana en blanco, se reintenta directamente.
-        window.open(urlWhatsApp, '_blank');
-      }
     } catch (err) {
-      if (ventanaWhatsApp) ventanaWhatsApp.close();
-      alert(`Error en el motor de inventario: ${err.response?.data?.detail || "No se pudo registrar el pedido."}`);
+      alert(`Tu mensaje de WhatsApp ya se abrió, pero el pedido no se pudo registrar en el sistema: ${err.response?.data?.detail || "Error de comunicación con el servidor."}`);
     }
   };
 
