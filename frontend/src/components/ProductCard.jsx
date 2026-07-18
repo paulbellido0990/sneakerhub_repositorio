@@ -18,11 +18,11 @@ export default function ProductCard({
     : parseFloat(producto.precio_base).toFixed(2);
 
   return (
-    <div className="bg-white border border-neutral-200/80 rounded-2xl overflow-hidden shadow-3xs hover:shadow-2xs transition-all duration-300 flex flex-col justify-between group relative">
-      
+    <div className="bg-white border border-neutral-200/70 rounded-2xl overflow-hidden shadow-soft hover:shadow-card hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group relative">
+
       {/* Etiqueta de Descuento Flotante */}
       {tieneDescuento && (
-        <span className="absolute top-3 left-3 bg-red-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md z-10 tracking-wider shadow-2xs">
+        <span className="absolute top-3 left-3 bg-linear-to-r from-red-500 to-rose-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md z-10 tracking-wider shadow-2xs">
           -{producto.porcentaje_descuento}% OFF
         </span>
       )}
@@ -51,7 +51,7 @@ export default function ProductCard({
           </span>
           <h3 
             onClick={() => alSeleccionar(producto)} 
-            className="text-sm font-black text-neutral-900 mt-0.5 line-clamp-1 uppercase tracking-tight cursor-pointer hover:text-neutral-600 transition-colors"
+            className="text-sm font-black text-neutral-900 mt-0.5 line-clamp-1 uppercase tracking-tight cursor-pointer hover:text-indigo-600 transition-colors"
           >
             {producto.nombre}
           </h3>
@@ -111,10 +111,10 @@ export default function ProductCard({
           </div>
         ) : (
           /* Botón Estándar de Compra para Clientes */
-          <button 
-            type="button" 
-            onClick={() => alSeleccionar(producto)} 
-            className="w-full bg-neutral-900 text-white font-bold text-xs py-2.5 rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer uppercase tracking-wider"
+          <button
+            type="button"
+            onClick={() => alSeleccionar(producto)}
+            className="w-full bg-neutral-900 text-white font-bold text-xs py-2.5 rounded-xl hover:bg-indigo-600 transition-colors duration-300 cursor-pointer uppercase tracking-wider"
           >
             Ver Detalles
           </button>

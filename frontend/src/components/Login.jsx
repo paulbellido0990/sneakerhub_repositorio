@@ -59,11 +59,17 @@ export default function Login({ onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4 font-sans antialiased">
-      <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200">
-        
+    <div className="min-h-screen bg-linear-to-br from-neutral-950 via-neutral-950 to-indigo-950 flex items-center justify-center p-4 font-sans antialiased relative overflow-hidden">
+      <div className="absolute -top-24 -left-24 h-72 w-72 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute -bottom-24 -right-24 h-72 w-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div className="max-w-md w-full bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 rounded-3xl p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200 relative">
+
         {/* LOGO / ENCABEZADO */}
-        <div className="text-center space-y-1">
+        <div className="text-center space-y-1.5">
+          <div className="mx-auto h-12 w-12 rounded-2xl bg-linear-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-glow mb-3">
+            <span className="text-white font-black text-lg">S</span>
+          </div>
           <h2 className="text-2xl font-black text-white uppercase tracking-tight">
             SneakerHub
           </h2>
@@ -74,17 +80,17 @@ export default function Login({ onLoginSuccess }) {
 
         {/* SELECTOR DE PESTAÑAS */}
         <div className="grid grid-cols-2 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
-          <button 
+          <button
             type="button"
             onClick={() => { setEsRegistro(false); setError(null); }}
-            className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${!esRegistro ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-white'}`}
+            className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${!esRegistro ? 'bg-indigo-600 text-white shadow-xs' : 'text-neutral-500 hover:text-white'}`}
           >
             Iniciar Sesión
           </button>
-          <button 
+          <button
             type="button"
             onClick={() => { setEsRegistro(true); setError(null); }}
-            className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${esRegistro ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-white'}`}
+            className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${esRegistro ? 'bg-indigo-600 text-white shadow-xs' : 'text-neutral-500 hover:text-white'}`}
           >
             Registrarse
           </button>
@@ -108,7 +114,7 @@ export default function Login({ onLoginSuccess }) {
                 placeholder="Paul Llallahui"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-700"
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-neutral-700"
               />
             </div>
           )}
@@ -120,7 +126,7 @@ export default function Login({ onLoginSuccess }) {
               placeholder="ejemplo@sneakerhub.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-700"
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-neutral-700"
             />
           </div>
 
@@ -133,7 +139,7 @@ export default function Login({ onLoginSuccess }) {
                 placeholder="9XXXXXXXX (9 dígitos)"
                 value={telefono}
                 onChange={(e) => setTelefono(e.target.value)}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-700 font-mono"
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-neutral-700 font-mono"
               />
             </div>
           )}
@@ -145,14 +151,14 @@ export default function Login({ onLoginSuccess }) {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-all placeholder:text-neutral-700"
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-neutral-700"
             />
           </div>
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={cargando}
-            className={`w-full font-bold text-xs py-3.5 rounded-xl text-black bg-white hover:bg-neutral-200 uppercase tracking-widest transition-all cursor-pointer ${cargando ? 'opacity-50 cursor-not-allowed animate-pulse' : ''}`}
+            className={`w-full font-bold text-xs py-3.5 rounded-xl text-white bg-linear-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 shadow-glow uppercase tracking-widest transition-all cursor-pointer ${cargando ? 'opacity-50 cursor-not-allowed animate-pulse' : ''}`}
           >
             {cargando ? "Procesando..." : esRegistro ? "Crear Cuenta de Cliente" : "Entrar al Sistema →"}
           </button>

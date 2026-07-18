@@ -355,7 +355,12 @@ export default function App() {
     ? (marcaFiltroReporte ? reportesBajoStock.filter(item => item?.marca === marcaFiltroReporte) : reportesBajoStock)
     : [];
 
-  if (validandoSesion) return <div className="min-h-screen bg-neutral-50 flex items-center justify-center font-sans"><p className="text-xs font-black tracking-widest text-neutral-400 animate-pulse">Verificando Credenciales...</p></div>;
+  if (validandoSesion) return (
+    <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center gap-4 font-sans">
+      <div className="h-10 w-10 rounded-2xl bg-linear-to-br from-neutral-900 to-indigo-700 animate-pulse shadow-glow"></div>
+      <p className="text-xs font-black tracking-widest text-neutral-400 animate-pulse uppercase">Verificando Credenciales...</p>
+    </div>
+  );
   
   if (mostrarLogin) return (
     <div className="relative">
@@ -376,37 +381,40 @@ export default function App() {
     <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans antialiased">
       
       {token && rol === 'admin' && (
-        <div className="bg-emerald-600 text-white text-xs font-bold py-2 px-4 flex justify-between items-center animate-in fade-in duration-200">
-          <div className="flex items-center gap-3">
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-300 animate-pulse"></span>
-            <span>🛡️ Panel Administrativo ({nombreUsuario})</span>
-            <button onClick={() => setModalFormularioAbierto(true)} className="bg-white text-emerald-800 px-3 py-1 rounded-lg text-[11px] font-black hover:bg-neutral-100 cursor-pointer uppercase">+ Añadir Zapatilla</button>
-            <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-neutral-950 text-white'}`}>{verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}</button>
-            <button onClick={() => setModalPedidosAbierto(true)} className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer">📋 Historial de Pedidos</button>
-            <button onClick={() => { setModalReportesAbierto(true); setMarcaFiltroReporte(''); }} className="bg-amber-500 text-white hover:bg-amber-600 px-3 py-1 rounded-lg text-[11px] font-black uppercase cursor-pointer shadow-xs">📈 Alertas de Stock</button>
-            <button onClick={() => setVerDashboardBI(!verDashboardBI)} className={`px-3 py-1 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verDashboardBI ? 'bg-white text-neutral-950 shadow-inner' : 'bg-neutral-900 text-white hover:bg-neutral-950'}`}>
+        <div className="bg-linear-to-r from-neutral-950 via-neutral-900 to-indigo-950 text-white text-xs font-bold py-2.5 px-4 flex flex-wrap justify-between items-center gap-2 animate-in fade-in duration-200 shadow-lg">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="mr-1 text-neutral-300">🛡️ Panel Administrativo (<b className="text-white">{nombreUsuario}</b>)</span>
+            <button onClick={() => setModalFormularioAbierto(true)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[11px] font-black hover:bg-indigo-500 transition-colors cursor-pointer uppercase shadow-xs">+ Añadir Zapatilla</button>
+            <button onClick={() => setVerOcultos(!verOcultos)} className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verOcultos ? 'bg-amber-500 text-white' : 'bg-white/10 text-white hover:bg-white/20'}`}>{verOcultos ? "👀 Ver Catálogo" : "🗄️ Ver Ocultos"}</button>
+            <button onClick={() => setModalPedidosAbierto(true)} className="bg-white/10 text-white hover:bg-white/20 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase cursor-pointer transition-colors">📋 Historial de Pedidos</button>
+            <button onClick={() => { setModalReportesAbierto(true); setMarcaFiltroReporte(''); }} className="bg-amber-500 text-white hover:bg-amber-400 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase cursor-pointer shadow-xs transition-colors">📈 Alertas de Stock</button>
+            <button onClick={() => setVerDashboardBI(!verDashboardBI)} className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase transition-all cursor-pointer ${verDashboardBI ? 'bg-white text-neutral-950 shadow-inner' : 'bg-white/10 text-white hover:bg-white/20'}`}>
               {verDashboardBI ? "📊 Ocultar BI" : "📊 Ver Dashboard BI"}
             </button>
           </div>
-          <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg text-[11px] font-black cursor-pointer uppercase">Cerrar Sesión</button>
+          <button onClick={handleLogout} className="bg-red-600/90 hover:bg-red-600 px-3 py-1.5 rounded-lg text-[11px] font-black cursor-pointer uppercase transition-colors">Cerrar Sesión</button>
         </div>
       )}
 
       {/* HEADER DINÁMICO */}
-      <header className="bg-white border-b border-neutral-200 sticky top-0 z-40 px-4 py-4 shadow-2xs">
+      <header className="bg-white/90 backdrop-blur-md border-b border-neutral-200 sticky top-0 z-40 px-4 py-4 shadow-soft">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <h1 className="text-xl font-black tracking-tight uppercase">SneakerHub <span className="text-neutral-400 font-normal text-sm">Ayacucho</span></h1>
+          <h1 className="text-xl font-black tracking-tight uppercase flex items-center gap-2.5">
+            <span className="h-9 w-9 rounded-xl bg-linear-to-br from-neutral-900 to-indigo-700 text-white flex items-center justify-center text-sm shadow-glow shrink-0">S</span>
+            SneakerHub <span className="text-neutral-400 font-normal text-sm">Ayacucho</span>
+          </h1>
           <div className="flex items-center gap-4">
             {token && (
-              <span className="text-xs font-bold text-neutral-600">
+              <span className="text-xs font-bold text-neutral-600 hidden sm:inline">
                 👋 Hola, <b className="text-neutral-900 font-black">{nombreUsuario}</b>
               </span>
             )}
             {token && rol !== 'admin' && (
-              <button onClick={() => setModalMisPedidosAbierto(true)} className="border border-neutral-200 text-neutral-700 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer transition-colors">📋 Mis Compras</button>
+              <button onClick={() => setModalMisPedidosAbierto(true)} className="border border-neutral-200 text-neutral-700 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 hover:border-neutral-300 cursor-pointer transition-all">📋 Mis Compras</button>
             )}
             {!token ? (
-              <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 cursor-pointer">Ingresar 🔐</button>
+              <button onClick={() => setMostrarLogin(true)} className="border border-neutral-200 text-neutral-600 font-bold text-xs px-3.5 py-2.5 rounded-xl hover:bg-neutral-50 hover:border-neutral-300 cursor-pointer transition-all">Ingresar 🔐</button>
             ) : (
               <div className="flex items-center gap-2">
                 {rol !== 'admin' && (
@@ -414,7 +422,7 @@ export default function App() {
                 )}
               </div>
             )}
-            <button onClick={() => setMenuCarritoAbierto(true)} className="bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer">🛒 Mi Carrito <span className="bg-red-500 text-white text-[10px] h-5 w-5 rounded-full flex items-center justify-center font-black">{carrito.reduce((s, i) => s + i.cantidad, 0)}</span></button>
+            <button onClick={() => setMenuCarritoAbierto(true)} className="bg-neutral-900 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer hover:bg-indigo-600 transition-colors duration-300 shadow-soft">🛒 Mi Carrito <span className="bg-red-500 text-white text-[10px] h-5 w-5 rounded-full flex items-center justify-center font-black">{carrito.reduce((s, i) => s + i.cantidad, 0)}</span></button>
           </div>
         </div>
       </header>
@@ -492,17 +500,17 @@ export default function App() {
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">¿Qué zapatillas buscas?</label>
-            <input type="text" placeholder="Ej. Jordan..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-neutral-900 focus:bg-white transition-all"/>
+            <input type="text" placeholder="Ej. Jordan..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 focus:bg-white transition-all"/>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">Filtrar por tu Talla</label>
-            <select value={tallaFiltro} onChange={(e) => setTallaFiltro(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none cursor-pointer">
+            <select value={tallaFiltro} onChange={(e) => setTallaFiltro(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 cursor-pointer transition-all">
               <option value="">Todas las tallas disponibles</option>
               {["35", "36", "37", "38", "39", "40", "41", "42", "43", "44"].map(t => <option key={t} value={t}>Talla {t}</option>)}
             </select>
           </div>
           <div className="flex items-end">
-            {(busqueda || tallaFiltro) && <button onClick={() => { setBusqueda(''); setTallaFiltro(''); }} className="w-full md:w-auto text-xs font-bold uppercase bg-neutral-100 text-neutral-700 px-5 py-3 rounded-xl cursor-pointer">Limpiar Filtros</button>}
+            {(busqueda || tallaFiltro) && <button onClick={() => { setBusqueda(''); setTallaFiltro(''); }} className="w-full md:w-auto text-xs font-bold uppercase bg-neutral-100 text-neutral-700 hover:bg-neutral-200 px-5 py-3 rounded-xl cursor-pointer transition-colors">Limpiar Filtros</button>}
           </div>
         </div>
       </section>
@@ -513,7 +521,7 @@ export default function App() {
         {cargando ? (
           <div className="flex items-center justify-center py-20"><p className="text-neutral-400 font-medium animate-pulse">Sincronizando con el servidor...</p></div>
         ) : productos.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-2xl border p-8">
+          <div className="text-center py-20 bg-white rounded-2xl border border-neutral-200 shadow-soft p-8">
             <p className="text-neutral-500 font-bold text-lg">{verOcultos ? "No hay archivados" : "No encontramos zapatillas con esos filtros"}</p>
           </div>
         ) : (
@@ -537,11 +545,11 @@ export default function App() {
       {productoSeleccionado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl relative flex flex-col md:flex-row">
-            <button onClick={() => setProductoSeleccionado(null)} className="absolute top-4 right-4 z-10 bg-white/80 border h-8 w-8 rounded-full flex items-center justify-center font-bold cursor-pointer">✕</button>
-            <div className="md:w-1/2 bg-neutral-50 p-8 flex items-center justify-center"><img src={productoSeleccionado.variantes_color?.[0]?.imagenes?.find(img => img.es_principal)?.url_imagen || productoSeleccionado.variantes_color?.[0]?.imagenes?.[0]?.url_imagen} alt={productoSeleccionado.nombre} className="max-h-64 md:max-h-full max-w-full object-contain" /></div>
+            <button onClick={() => setProductoSeleccionado(null)} className="absolute top-4 right-4 z-10 bg-white/90 border border-neutral-200 h-8 w-8 rounded-full flex items-center justify-center font-bold cursor-pointer hover:bg-neutral-100 transition-colors">✕</button>
+            <div className="md:w-1/2 bg-linear-to-br from-neutral-50 to-neutral-100 p-8 flex items-center justify-center"><img src={productoSeleccionado.variantes_color?.[0]?.imagenes?.find(img => img.es_principal)?.url_imagen || productoSeleccionado.variantes_color?.[0]?.imagenes?.[0]?.url_imagen} alt={productoSeleccionado.nombre} className="max-h-64 md:max-h-full max-w-full object-contain drop-shadow-xl" /></div>
             <div className="md:w-1/2 p-6 flex flex-col justify-between">
               <div>
-                <span className="text-xs uppercase font-bold text-neutral-400 tracking-widest">{productoSeleccionado.marca?.nombre} • {productoSeleccionado.categoria?.nombre}</span>
+                <span className="text-xs uppercase font-bold text-indigo-600 tracking-widest">{productoSeleccionado.marca?.nombre} • {productoSeleccionado.categoria?.nombre}</span>
                 <h2 className="text-xl font-black text-neutral-900 mt-1">{productoSeleccionado.nombre}</h2>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-2xl font-black text-neutral-900">S/. {productoSeleccionado.precio_final || (productoSeleccionado.precio_base * (1 - (productoSeleccionado.porcentaje_descuento || 0) / 100)).toFixed(2)}</span>
@@ -552,11 +560,11 @@ export default function App() {
                 <h4 className="text-xs font-bold text-neutral-400 mb-3">Selecciona tu talla:</h4>
                 <div className="flex flex-wrap gap-2">
                   {productoSeleccionado.variantes_color?.[0]?.tallares_stock?.map((item) => (
-                    <button key={item.id} disabled={item.stock === 0} onClick={() => setTallaSeleccionada(item.talla)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${item.stock === 0 ? 'border-neutral-100 text-neutral-300 bg-neutral-100 line-through' : tallaSeleccionada === item.talla ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 text-neutral-800 cursor-pointer'}`}>{item.talla}</button>
+                    <button key={item.id} disabled={item.stock === 0} onClick={() => setTallaSeleccionada(item.talla)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${item.stock === 0 ? 'border-neutral-100 text-neutral-300 bg-neutral-100 line-through' : tallaSeleccionada === item.talla ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs' : 'border-neutral-200 text-neutral-800 hover:border-indigo-300 cursor-pointer'}`}>{item.talla}</button>
                   ))}
                 </div>
               </div>
-              <div className="mt-8"><button onClick={agregarAlCarrito} className="w-full bg-neutral-900 text-white font-bold text-sm py-3.5 rounded-xl hover:bg-neutral-800 cursor-pointer">Agregar al Carrito</button></div>
+              <div className="mt-8"><button onClick={agregarAlCarrito} className="w-full bg-neutral-900 text-white font-bold text-sm py-3.5 rounded-xl hover:bg-indigo-600 transition-colors duration-300 cursor-pointer shadow-soft">Agregar al Carrito</button></div>
             </div>
           </div>
         </div>
@@ -572,8 +580,8 @@ export default function App() {
               <div className="overflow-y-auto max-h-[50vh] space-y-4 pr-1 mb-4">
                 {carrito.length === 0 ? <p className="text-center text-neutral-400 text-sm py-12">Carrito vacío.</p> : (
                   carrito.map((item) => (
-                    <div key={`${item.id}-${item.talla}`} className="flex items-center gap-4 bg-neutral-50 p-3 rounded-2xl border border-neutral-100 relative">
-                      <img src={item.imagen} alt={item.nombre} className="h-16 w-16 object-contain bg-white rounded-xl" />
+                    <div key={`${item.id}-${item.talla}`} className="flex items-center gap-4 bg-neutral-50 p-3 rounded-2xl border border-neutral-100 relative hover:border-neutral-200 transition-colors">
+                      <img src={item.imagen} alt={item.nombre} className="h-16 w-16 object-contain bg-white rounded-xl border border-neutral-100" />
                       <div className="grow">
                         <span className="text-[10px] font-bold text-neutral-400 uppercase">{item.marca} • Talla {item.talla}</span>
                         <h4 className="text-sm font-bold text-neutral-900 line-clamp-1">{item.nombre}</h4>
@@ -584,7 +592,7 @@ export default function App() {
                           <button type="button" onClick={() => modificarCantidad(item.id, item.talla, 1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer hover:bg-neutral-200 text-neutral-400 transition-all">+</button>
                         </div>
                       </div>
-                      <button type="button" onClick={() => setCarrito(carrito.filter(i => !(i.id === item.id && i.talla === item.talla)))} className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold cursor-pointer">✕</button>
+                      <button type="button" onClick={() => setCarrito(carrito.filter(i => !(i.id === item.id && i.talla === item.talla)))} className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold cursor-pointer transition-colors">✕</button>
                     </div>
                   ))
                 )}
@@ -600,8 +608,8 @@ export default function App() {
                     maxLength="12"
                     placeholder="Ej. 02948174"
                     value={codigoPago}
-                    onChange={(e) => setCodigoPago(e.target.value.replace(/\D/g, ''))} 
-                    className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold focus:outline-none focus:border-neutral-900 text-neutral-800 tracking-widest"
+                    onChange={(e) => setCodigoPago(e.target.value.replace(/\D/g, ''))}
+                    className="w-full bg-white border border-neutral-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 text-neutral-800 tracking-widest transition-all"
                   />
                   <span className="text-[9px] text-neutral-400 font-medium mt-1 block">Realiza tu pago antes de gatillar la confirmation por WhatsApp.</span>
                 </div>
@@ -631,7 +639,7 @@ export default function App() {
               ) : pedidos.length === 0 ? (
                 <p className="text-center py-12 text-sm text-neutral-400 font-bold">Aún no se registran transacciones de venta en el sistema.</p>
               ) : (
-                <div className="border border-neutral-200 rounded-2xl overflow-hidden shadow-2xs">
+                <div className="border border-neutral-200 rounded-2xl overflow-hidden shadow-soft">
                   <table className="w-full text-left border-collapse bg-white">
                     <thead>
                       <tr className="bg-neutral-50 text-[10px] font-black uppercase tracking-wider text-neutral-400 border-b border-neutral-200">
@@ -738,7 +746,7 @@ export default function App() {
               ) : reportesFiltrados.length === 0 ? (
                 <p className="text-center py-12 text-sm text-neutral-500 font-bold">🎉 No existen variantes críticamente agotadas en esta selección.</p>
               ) : (
-                <div className="border border-neutral-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="border border-neutral-200 rounded-xl overflow-hidden shadow-soft">
                   <table className="w-full text-left border-collapse bg-white">
                     <thead>
                       <tr className="bg-neutral-50 text-[10px] font-black uppercase tracking-wider text-neutral-400 border-b border-neutral-200">
