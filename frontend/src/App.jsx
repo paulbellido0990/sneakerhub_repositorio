@@ -257,12 +257,16 @@ export default function App() {
 
   const enviarPedidoWhatsApp = async () => {
     if (carrito.length === 0) return;
-    
+
     // 🛡️ CORREGIDO: Remoción de la propiedad .strip de Python
     if (!codigoPago || !codigoPago.trim()) {
       alert("⚠️ Validación de Pago: Ingresa el código de operación de tu transferencia (Yape o Plin) antes de continuar.");
       return;
     }
+
+    // 🛡️ FIX: Se abre la pestaña en blanco de forma síncrona (dentro del gesto de clic)
+    // para que el navegador no la bloquee como popup tras el await de la petición.
+    const ventanaWhatsApp = window.open('', '_blank');
 
     try {
       const pedidoPayload = {
@@ -290,8 +294,16 @@ export default function App() {
       setCarrito([]);
       setCodigoPago('');
       setMenuCarritoAbierto(false);
-      window.open(`https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`, '_blank');
+
+      const urlWhatsApp = `https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`;
+      if (ventanaWhatsApp) {
+        ventanaWhatsApp.location.href = urlWhatsApp;
+      } else {
+        // Si el navegador bloqueó incluso la ventana en blanco, se reintenta directamente.
+        window.open(urlWhatsApp, '_blank');
+      }
     } catch (err) {
+      if (ventanaWhatsApp) ventanaWhatsApp.close();
       alert(`Error en el motor de inventario: ${err.response?.data?.detail || "No se pudo registrar el pedido."}`);
     }
   };
