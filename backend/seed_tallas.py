@@ -23,7 +23,18 @@ try:
         print(f"⚠️ Aviso al cargar modelos de orden: {e}")
     
     print("✅ Conexión con los modelos de SneakerHub establecida con éxito.")
-    
+
+    # 🛑 GUARDIÁN DE SEGURIDAD: Este script borra TODAS las tablas de la base de
+    # datos activa. Si el DATABASE_URL apunta a Aiven (producción), se exige una
+    # confirmación explícita mediante la variable de entorno CONFIRM_WIPE_AIVEN=si
+    # para evitar un borrado accidental de datos reales de clientes.
+    if "aivencloud" in str(engine.url) and os.getenv("CONFIRM_WIPE_AIVEN") != "si":
+        print("🛑 BLOQUEADO: El DATABASE_URL activo apunta a Aiven (producción).")
+        print("   Este script borraría TODAS las tablas de la base de datos real.")
+        print("   Si estás absolutamente seguro de que quieres continuar, vuelve a")
+        print("   ejecutar con la variable de entorno CONFIRM_WIPE_AIVEN=si")
+        sys.exit(1)
+
     # 4. 🩹 PARCHE DE SEGURIDAD: Deduplicación de índices en memoria de SQLAlchemy
     print("🩹 Analizando y deduplicando índices en los metadatos de SQLAlchemy...")
     for table_name, table in Base.metadata.tables.items():
