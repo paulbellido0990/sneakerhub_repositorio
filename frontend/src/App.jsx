@@ -708,15 +708,11 @@ export default function App() {
                                   onChange={(e) => handleCambiarEstadoPedido(order.id, e.target.value)}
                                   className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg border cursor-pointer focus:outline-none transition-all ${
                                     order.estado === 'PENDIENTE' ? 'bg-amber-100 text-amber-800 border-amber-200' :
-                                    order.estado === 'CONFIRMADO' ? 'bg-blue-100 text-blue-800 border-blue-200' :
-                                    order.estado === 'ENVIADO' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' :
                                     'bg-emerald-100 text-emerald-800 border-emerald-200'
                                   }`}
                                 >
                                   <option value="PENDIENTE">⏳ PENDIENTE</option>
-                                  <option value="CONFIRMADO">✅ CONFIRMADO</option>
-                                  <option value="ENVIADO">🚚 ENVIADO</option>
-                                  <option value="ENTREGADO">📦 ENTREGADO</option>
+                                  <option value="ENTREGADO">✅ COMPLETADO</option>
                                 </select>
                               </td>
                               <td className="px-4 py-3.5 text-right font-black text-neutral-900 text-sm">S/. {parseFloat(order.total).toFixed(2)}</td>
@@ -854,11 +850,9 @@ export default function App() {
                             <div>
                               <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md border ${
                                 pedido.estado === 'PENDIENTE' ? 'bg-amber-100 text-amber-800 border-amber-200' :
-                                pedido.estado === 'CONFIRMADO' ? 'bg-blue-100 text-blue-800 border-blue-200' :
-                                pedido.estado === 'ENVIADO' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' :
                                 'bg-emerald-100 text-emerald-800 border-emerald-200'
                               }`}>
-                                {pedido.estado}
+                                {pedido.estado === 'ENTREGADO' ? 'COMPLETADO' : pedido.estado}
                               </span>
                             </div>
                             <div className="text-right">

@@ -39,7 +39,11 @@ def actualizar_estado_pedido(
     admin_actual = Depends(verificar_admin)
 ):
     try:
-        estados_permitidos = ["PENDIENTE", "CONFIRMADO", "ENVIADO", "ENTREGADO"]
+        # 🛡️ Reducido a los 2 valores confirmados como válidos contra el constraint
+        # 'pedidos_chk_2' de la base de datos en producción (Aiven). "CONFIRMADO" y
+        # "ENVIADO" violan esa restricción física y no se usan hasta confirmar su
+        # definición exacta.
+        estados_permitidos = ["PENDIENTE", "ENTREGADO"]
         nuevo_estado = payload.estado.upper()
 
         if nuevo_estado not in estados_permitidos:
