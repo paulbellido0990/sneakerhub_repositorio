@@ -70,7 +70,7 @@ export default function ModalEditarStock({ producto, alCerrar, onStockActualizad
             <h3 className="text-base font-black uppercase text-neutral-950">📦 Matriz de Almacén</h3>
             <p className="text-xs text-neutral-400 line-clamp-1">{producto.nombre}</p>
           </div>
-          <button type="button" onClick={alCerrar} className="text-neutral-400 hover:text-neutral-900 font-bold p-1 cursor-pointer">✕</button>
+          <button type="button" onClick={alCerrar} aria-label="Cerrar matriz de almacén" className="text-neutral-400 hover:text-neutral-900 font-bold p-1 cursor-pointer">✕</button>
         </div>
 
         {error && <div className="bg-red-50 border border-red-100 p-2.5 rounded-xl text-center text-red-600 text-xs mb-3 font-medium">{error}</div>}

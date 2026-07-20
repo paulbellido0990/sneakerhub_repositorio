@@ -104,7 +104,7 @@ export default function FormularioProducto({ onProductoRegistrado, alCerrar }) {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative border border-neutral-100 max-h-[90vh] overflow-y-auto">
         
-        <button onClick={alCerrar} className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-900 font-bold p-1 cursor-pointer">✕</button>
+        <button onClick={alCerrar} aria-label="Cerrar panel de abastecimiento" className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-900 font-bold p-1 cursor-pointer">✕</button>
 
         <h3 className="text-lg font-black uppercase tracking-tight mb-2 text-neutral-900">
           👟 Panel de Abastecimiento Relacional

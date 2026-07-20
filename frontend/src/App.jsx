@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import API from './api';
-import ProductCard from './components/ProductCard';
+import ProductCard, { ProductCardSkeleton } from './components/ProductCard';
 import Login from './components/Login'; 
 import FormularioProducto from './components/FormularioProducto';
 import ModalEditarStock from './components/ModalEditarStock'; 
@@ -60,6 +60,8 @@ export default function App() {
 
   const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [tallaSeleccionada, setTallaSeleccionada] = useState('');
+  // 🎨 HU-16 (CA-04): índice de la mini-galería de imágenes en la ficha técnica
+  const [imagenGaleriaActiva, setImagenGaleriaActiva] = useState(0);
 
   const [carrito, setCarrito] = useState(() => {
     const datosLocales = localStorage.getItem('sneakerhub_cart');
@@ -68,6 +70,16 @@ export default function App() {
   const [menuCarritoAbierto, setMenuCarritoAbierto] = useState(false);
   // 🛡️ Enlace de respaldo por si un bloqueador impide el clic automático a WhatsApp
   const [ultimoLinkWhatsApp, setUltimoLinkWhatsApp] = useState(null);
+
+  // 🎨 HU-16 (CA-07): sistema de notificaciones propio para reemplazar alert()
+  const [toasts, setToasts] = useState([]);
+  const mostrarToast = (mensaje, tipo = 'info') => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, mensaje, tipo }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  };
 
   useEffect(() => {
     localStorage.setItem('sneakerhub_cart', JSON.stringify(carrito));
@@ -213,7 +225,7 @@ export default function App() {
       setProductos((prev) => prev.filter(p => p.id !== id));
       setProductoSeleccionado(null);
     } catch (err) {
-      alert(`Error: ${err.response?.data?.detail || err.message}`);
+      mostrarToast(`Error: ${err.response?.data?.detail || err.message}`, 'danger');
     }
   };
 
@@ -223,12 +235,12 @@ export default function App() {
       await API.post(`/productos/${id}/activar`, {}, { headers: { 'Authorization': `Bearer ${tokenGuardado}` } });
       setProductos((prev) => prev.filter(p => p.id !== id));
     } catch (err) {
-      alert(`Error: ${err.response?.data?.detail || err.message}`);
+      mostrarToast(`Error: ${err.response?.data?.detail || err.message}`, 'danger');
     }
   };
 
   const agregarAlCarrito = () => {
-    if (!tallaSeleccionada) { alert("Selecciona una talla"); return; }
+    if (!tallaSeleccionada) { mostrarToast("Selecciona una talla", 'warning'); return; }
     const variante = productoSeleccionado.variantes_color?.[0];
     const img = variante?.imagenes?.find(i => i.es_principal)?.url_imagen || variante?.imagenes?.[0]?.url_imagen;
 
@@ -262,7 +274,7 @@ export default function App() {
 
     // 🛡️ CORREGIDO: Remoción de la propiedad .strip de Python
     if (!codigoPago || !codigoPago.trim()) {
-      alert("⚠️ Validación de Pago: Ingresa el código de operación de tu transferencia (Yape o Plin) antes de continuar.");
+      mostrarToast("Validación de Pago: Ingresa el código de operación de tu transferencia (Yape o Plin) antes de continuar.", 'warning');
       return;
     }
 
@@ -328,7 +340,7 @@ export default function App() {
 
       await API.post('/pedidos/', pedidoPayload);
     } catch (err) {
-      alert(`Tu mensaje de WhatsApp ya se abrió, pero el pedido no se pudo registrar en el sistema: ${err.response?.data?.detail || "Error de comunicación con el servidor."}`);
+      mostrarToast(`Tu mensaje de WhatsApp ya se abrió, pero el pedido no se pudo registrar en el sistema: ${err.response?.data?.detail || "Error de comunicación con el servidor."}`, 'danger');
     }
   };
 
@@ -341,7 +353,7 @@ export default function App() {
       setPedidos((prev) => prev.map(p => p.id === pedidoId ? { ...p, estado: nuevoEstado } : p));
       if (verDashboardBI) setVerDashboardBI(false); setTimeout(() => setVerDashboardBI(true), 50);
     } catch (err) {
-      alert(`Error al actualizar estado: ${err.response?.data?.detail || err.message}`);
+      mostrarToast(`Error al actualizar estado: ${err.response?.data?.detail || err.message}`, 'danger');
     }
   };
 
@@ -378,8 +390,9 @@ export default function App() {
       setTimeout(() => setBusqueda(prev => prev.trim()), 50);
 
       setProductoParaEditar(null);
+      mostrarToast("Ficha técnica actualizada correctamente.", 'success');
     } catch (err) {
-      alert(`Error al guardar cambios: ${err.response?.data?.detail || err.message}`);
+      mostrarToast(`Error al guardar cambios: ${err.response?.data?.detail || err.message}`, 'danger');
     }
   };
 
@@ -531,23 +544,65 @@ export default function App() {
         </section>
       )}
 
-      {/* FILTROS */}
-      <section className="bg-white border-b border-neutral-200 px-4 py-6">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* FILTROS — HU-16 (CA-02): buscador con ícono, chips de talla y contador de resultados */}
+      <section className="bg-white border-b border-neutral-200 px-4 py-6 sticky top-16.25 z-30 shadow-soft">
+        <div className="max-w-7xl mx-auto space-y-4">
+          <div className="flex flex-col md:flex-row md:items-end gap-4">
+            <div className="flex flex-col gap-1.5 flex-1">
+              <label htmlFor="filtro-busqueda" className="text-xs font-bold uppercase tracking-wider text-neutral-500">¿Qué zapatillas buscas?</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 text-sm pointer-events-none" aria-hidden="true">🔍</span>
+                <input
+                  id="filtro-busqueda"
+                  type="text"
+                  placeholder="Ej. Jordan, Adidas Campus..."
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-xl pl-10 pr-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 focus:bg-white transition-all"
+                />
+              </div>
+            </div>
+            {(busqueda || tallaFiltro) && (
+              <button
+                onClick={() => { setBusqueda(''); setTallaFiltro(''); }}
+                className="text-xs font-bold uppercase bg-neutral-100 text-neutral-700 hover:bg-neutral-200 px-5 py-2.5 rounded-xl cursor-pointer transition-all animate-fade-in-up shrink-0"
+              >
+                ✕ Limpiar Filtros
+              </button>
+            )}
+          </div>
+
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">¿Qué zapatillas buscas?</label>
-            <input type="text" placeholder="Ej. Jordan..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 focus:bg-white transition-all"/>
+            <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">Filtrar por tu Talla</span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filtro de talla">
+              {["35", "36", "37", "38", "39", "40", "41", "42", "43", "44"].map((t) => {
+                const activa = tallaFiltro === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTallaFiltro(activa ? '' : t)}
+                    aria-pressed={activa}
+                    className={`h-9 min-w-9 px-2.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                      activa
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                        : 'bg-neutral-50 border-neutral-200 text-neutral-700 hover:border-indigo-300 hover:text-indigo-600'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">Filtrar por tu Talla</label>
-            <select value={tallaFiltro} onChange={(e) => setTallaFiltro(e.target.value)} className="border border-neutral-200 rounded-xl px-4 py-2.5 text-sm bg-neutral-50 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 cursor-pointer transition-all">
-              <option value="">Todas las tallas disponibles</option>
-              {["35", "36", "37", "38", "39", "40", "41", "42", "43", "44"].map(t => <option key={t} value={t}>Talla {t}</option>)}
-            </select>
-          </div>
-          <div className="flex items-end">
-            {(busqueda || tallaFiltro) && <button onClick={() => { setBusqueda(''); setTallaFiltro(''); }} className="w-full md:w-auto text-xs font-bold uppercase bg-neutral-100 text-neutral-700 hover:bg-neutral-200 px-5 py-3 rounded-xl cursor-pointer transition-colors">Limpiar Filtros</button>}
-          </div>
+
+          {!cargando && (
+            <p className="text-xs font-semibold text-neutral-400">
+              {productos.length === 0
+                ? "Sin resultados para estos filtros"
+                : `${productos.length} ${productos.length === 1 ? 'resultado encontrado' : 'resultados encontrados'}`}
+            </p>
+          )}
         </div>
       </section>
 
@@ -555,23 +610,32 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {error && <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-center text-red-600 mb-6">{error}</div>}
         {cargando ? (
-          <div className="flex items-center justify-center py-20"><p className="text-neutral-400 font-medium animate-pulse">Sincronizando con el servidor...</p></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} />)}
+          </div>
         ) : productos.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-neutral-200 shadow-soft p-8">
-            <p className="text-neutral-500 font-bold text-lg">{verOcultos ? "No hay archivados" : "No encontramos zapatillas con esos filtros"}</p>
+            <span className="text-4xl block mb-3" aria-hidden="true">{verOcultos ? "🗄️" : "🔎"}</span>
+            <p className="text-neutral-700 font-bold text-lg">{verOcultos ? "No hay archivados" : "No encontramos zapatillas con esos filtros"}</p>
+            <p className="text-neutral-400 text-sm mt-1">{verOcultos ? "Los productos que ocultes aparecerán aquí." : "Prueba con otro término de búsqueda o cambia la talla filtrada."}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {productos.map((producto) => (
-              <ProductCard 
-                key={producto.id} 
-                producto={producto} 
-                alSeleccionar={(p) => { setProductoSeleccionado(p); setTallaSeleccionada(''); }} 
-                onEditarStock={rol === 'admin' ? (p) => setProductoParaStock(p) : null} 
-                onOcultarProducto={rol === 'admin' ? handleOcultarProducto : null} 
-                onActivarProducto={rol === 'admin' ? handleActivarProducto : null} 
-                onEditarProducto={rol === 'admin' ? handleAbrirEdicionProducto : null}
-              />
+            {productos.map((producto, i) => (
+              <div
+                key={producto.id}
+                className="animate-fade-in-up"
+                style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+              >
+                <ProductCard
+                  producto={producto}
+                  alSeleccionar={(p) => { setProductoSeleccionado(p); setTallaSeleccionada(''); setImagenGaleriaActiva(0); }}
+                  onEditarStock={rol === 'admin' ? (p) => setProductoParaStock(p) : null}
+                  onOcultarProducto={rol === 'admin' ? handleOcultarProducto : null}
+                  onActivarProducto={rol === 'admin' ? handleActivarProducto : null}
+                  onEditarProducto={rol === 'admin' ? handleAbrirEdicionProducto : null}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -581,8 +645,32 @@ export default function App() {
       {productoSeleccionado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl relative flex flex-col md:flex-row">
-            <button onClick={() => setProductoSeleccionado(null)} className="absolute top-4 right-4 z-10 bg-white/90 border border-neutral-200 h-8 w-8 rounded-full flex items-center justify-center font-bold cursor-pointer hover:bg-neutral-100 transition-colors">✕</button>
-            <div className="md:w-1/2 bg-linear-to-br from-neutral-50 to-neutral-100 p-8 flex items-center justify-center"><img src={productoSeleccionado.variantes_color?.[0]?.imagenes?.find(img => img.es_principal)?.url_imagen || productoSeleccionado.variantes_color?.[0]?.imagenes?.[0]?.url_imagen} alt={productoSeleccionado.nombre} className="max-h-64 md:max-h-full max-w-full object-contain drop-shadow-xl" /></div>
+            <button onClick={() => setProductoSeleccionado(null)} className="absolute top-4 right-4 z-10 bg-white/90 border border-neutral-200 h-8 w-8 rounded-full flex items-center justify-center font-bold cursor-pointer hover:bg-neutral-100 transition-colors" aria-label="Cerrar ficha técnica">✕</button>
+            {(() => {
+              const galeria = productoSeleccionado.variantes_color?.[0]?.imagenes || [];
+              const imagenActiva = galeria[imagenGaleriaActiva] || galeria.find(img => img.es_principal) || galeria[0];
+              return (
+                <div className="md:w-1/2 bg-linear-to-br from-neutral-50 to-neutral-100 p-8 flex flex-col items-center justify-center gap-4">
+                  <img src={imagenActiva?.url_imagen} alt={productoSeleccionado.nombre} className="max-h-56 md:max-h-full max-w-full object-contain drop-shadow-xl" />
+                  {galeria.length > 1 && (
+                    <div className="flex gap-2 flex-wrap justify-center" role="group" aria-label="Galería de imágenes del producto">
+                      {galeria.map((img, idx) => (
+                        <button
+                          key={img.id ?? idx}
+                          type="button"
+                          onClick={() => setImagenGaleriaActiva(idx)}
+                          aria-label={`Ver imagen ${idx + 1} de ${productoSeleccionado.nombre}`}
+                          aria-pressed={imagenGaleriaActiva === idx}
+                          className={`h-12 w-12 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${imagenGaleriaActiva === idx ? 'border-indigo-600' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                        >
+                          <img src={img.url_imagen} alt="" className="h-full w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="md:w-1/2 p-6 flex flex-col justify-between">
               <div>
                 <span className="text-xs uppercase font-bold text-indigo-600 tracking-widest">{productoSeleccionado.marca?.nombre} • {productoSeleccionado.categoria?.nombre}</span>
@@ -596,7 +684,15 @@ export default function App() {
                 <h4 className="text-xs font-bold text-neutral-400 mb-3">Selecciona tu talla:</h4>
                 <div className="flex flex-wrap gap-2">
                   {productoSeleccionado.variantes_color?.[0]?.tallares_stock?.map((item) => (
-                    <button key={item.id} disabled={item.stock === 0} onClick={() => setTallaSeleccionada(item.talla)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${item.stock === 0 ? 'border-neutral-100 text-neutral-300 bg-neutral-100 line-through' : tallaSeleccionada === item.talla ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs' : 'border-neutral-200 text-neutral-800 hover:border-indigo-300 cursor-pointer'}`}>{item.talla}</button>
+                    <button
+                      key={item.id}
+                      disabled={item.stock === 0}
+                      onClick={() => setTallaSeleccionada(item.talla)}
+                      title={item.stock === 0 ? 'Sin stock' : `${item.stock} ${item.stock === 1 ? 'unidad disponible' : 'unidades disponibles'}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${item.stock === 0 ? 'border-neutral-100 text-neutral-300 bg-neutral-100 line-through' : tallaSeleccionada === item.talla ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs' : 'border-neutral-200 text-neutral-800 hover:border-indigo-300 cursor-pointer'}`}
+                    >
+                      {item.talla}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -612,7 +708,39 @@ export default function App() {
           <div className="absolute inset-0" onClick={() => setMenuCarritoAbierto(false)}></div>
           <div key={totalCompra} className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between p-6 animate-in slide-in-from-right duration-150">
             <div>
-              <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4"><h2 className="text-lg font-black uppercase">Mi Pedido</h2><button type="button" onClick={() => setMenuCarritoAbierto(false)} className="text-neutral-400 font-bold p-1 cursor-pointer">Cerrar ✕</button></div>
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4"><h2 className="text-lg font-black uppercase">Mi Pedido</h2><button type="button" onClick={() => setMenuCarritoAbierto(false)} aria-label="Cerrar carrito" className="text-neutral-400 font-bold p-1 cursor-pointer">Cerrar ✕</button></div>
+
+              {/* 🎨 HU-16 (CA-04): stepper visual del flujo de checkout */}
+              {(() => {
+                const pasoActual = carrito.length === 0 ? 1 : (!codigoPago || !codigoPago.trim()) ? 2 : 3;
+                const pasos = [
+                  { n: 1, label: 'Carrito' },
+                  { n: 2, label: 'Código de pago' },
+                  { n: 3, label: 'Confirmar' },
+                ];
+                return (
+                  <div className="flex items-center gap-1.5 mb-5" aria-label={`Paso ${pasoActual} de 3`}>
+                    {pasos.map((paso, idx) => (
+                      <React.Fragment key={paso.n}>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 transition-colors ${
+                            paso.n < pasoActual ? 'bg-semantic-success text-white' :
+                            paso.n === pasoActual ? 'bg-indigo-600 text-white' :
+                            'bg-neutral-100 text-neutral-400'
+                          }`}>
+                            {paso.n < pasoActual ? '✓' : paso.n}
+                          </span>
+                          <span className={`text-[10px] font-bold uppercase tracking-wide hidden sm:inline ${paso.n === pasoActual ? 'text-neutral-900' : 'text-neutral-400'}`}>
+                            {paso.label}
+                          </span>
+                        </div>
+                        {idx < pasos.length - 1 && <div className={`flex-1 h-0.5 rounded-full ${paso.n < pasoActual ? 'bg-semantic-success' : 'bg-neutral-100'}`} />}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                );
+              })()}
+
               <div className="overflow-y-auto max-h-[50vh] space-y-4 pr-1 mb-4">
                 {carrito.length === 0 ? <p className="text-center text-neutral-400 text-sm py-12">Carrito vacío.</p> : (
                   carrito.map((item) => (
@@ -628,7 +756,7 @@ export default function App() {
                           <button type="button" onClick={() => modificarCantidad(item.id, item.talla, 1)} className="h-6 w-6 border rounded-md bg-white text-xs font-bold flex items-center justify-center cursor-pointer hover:bg-neutral-200 text-neutral-400 transition-all">+</button>
                         </div>
                       </div>
-                      <button type="button" onClick={() => setCarrito(carrito.filter(i => !(i.id === item.id && i.talla === item.talla)))} className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold cursor-pointer transition-colors">✕</button>
+                      <button type="button" onClick={() => setCarrito(carrito.filter(i => !(i.id === item.id && i.talla === item.talla)))} aria-label={`Quitar ${item.nombre} talla ${item.talla} del carrito`} className="absolute top-3 right-3 text-neutral-300 hover:text-red-500 text-xs font-bold cursor-pointer transition-colors">✕</button>
                     </div>
                   ))
                 )}
@@ -667,15 +795,23 @@ export default function App() {
                 <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900">📈 Auditoría Transaccional de Ventas</h3>
                 <p className="text-xs text-neutral-400">Verifica el código de Yape/Plin antes de validar la orden</p>
               </div>
-              <button onClick={() => setModalPedidosAbierto(false)} className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
+              <button onClick={() => setModalPedidosAbierto(false)} aria-label="Cerrar auditoría de pedidos" className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
             <div className="grow overflow-y-auto">
               {cargandoPedidos ? (
-                <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Extrayendo datos de base de datos...</p>
+                <div className="text-center py-12">
+                  <span className="text-3xl block mb-2 animate-pulse" aria-hidden="true">📡</span>
+                  <p className="text-sm text-neutral-400 animate-pulse font-medium">Extrayendo datos de base de datos...</p>
+                </div>
               ) : pedidos.length === 0 ? (
-                <p className="text-center py-12 text-sm text-neutral-400 font-bold">Aún no se registran transacciones de venta en el sistema.</p>
+                <div className="text-center py-12">
+                  <span className="text-3xl block mb-2" aria-hidden="true">🧾</span>
+                  <p className="text-sm text-neutral-600 font-bold">Aún no se registran transacciones de venta</p>
+                  <p className="text-xs text-neutral-400 mt-1">Los pedidos confirmados por tus clientes aparecerán aquí.</p>
+                </div>
               ) : (
                 <div className="border border-neutral-200 rounded-2xl overflow-hidden shadow-soft">
+                <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse bg-white">
                     <thead>
                       <tr className="bg-neutral-50 text-[10px] font-black uppercase tracking-wider text-neutral-400 border-b border-neutral-200">
@@ -748,6 +884,7 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                </div>
               )}
             </div>
           </div>
@@ -763,7 +900,7 @@ export default function App() {
                 <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">🚨 Telemetría de Rotura de Stock</h3>
                 <p className="text-xs text-neutral-400">Variantes con inventario crítico menor o igual a 2 unidades para reposición</p>
               </div>
-              <button onClick={() => setModalReportesAbierto(false)} className="self-end sm:self-center bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
+              <button onClick={() => setModalReportesAbierto(false)} aria-label="Cerrar telemetría de stock" className="self-end sm:self-center bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
             <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200 flex items-center gap-3 mb-4">
               <label className="text-[10px] font-black uppercase tracking-wider text-neutral-500">Filtrar por Marca Fabricante:</label>
@@ -774,11 +911,19 @@ export default function App() {
             </div>
             <div className="grow overflow-y-auto">
               {cargandoReportes ? (
-                <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Ejecutando agregación en MySQL...</p>
+                <div className="text-center py-12">
+                  <span className="text-3xl block mb-2 animate-pulse" aria-hidden="true">📡</span>
+                  <p className="text-sm text-neutral-400 animate-pulse font-medium">Ejecutando agregación en MySQL...</p>
+                </div>
               ) : reportesFiltrados.length === 0 ? (
-                <p className="text-center py-12 text-sm text-neutral-500 font-bold">🎉 No existen variantes críticamente agotadas en esta selección.</p>
+                <div className="text-center py-12">
+                  <span className="text-3xl block mb-2" aria-hidden="true">🎉</span>
+                  <p className="text-sm text-neutral-600 font-bold">No existen variantes críticamente agotadas</p>
+                  <p className="text-xs text-neutral-400 mt-1">Todo tu inventario está en niveles saludables por ahora.</p>
+                </div>
               ) : (
                 <div className="border border-neutral-200 rounded-xl overflow-hidden shadow-soft">
+                <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse bg-white">
                     <thead>
                       <tr className="bg-neutral-50 text-[10px] font-black uppercase tracking-wider text-neutral-400 border-b border-neutral-200">
@@ -802,6 +947,7 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                </div>
               )}
             </div>
             <div className="border-t border-neutral-100 pt-3 mt-4 text-right"><span className="text-[10px] text-neutral-400 font-bold uppercase font-mono">Telemetría Activa de Almacén</span></div>
@@ -818,14 +964,18 @@ export default function App() {
                 <h3 className="text-lg font-black uppercase tracking-tight text-neutral-900 flex items-center gap-2">📦 Mi Historial de Compras</h3>
                 <p className="text-xs text-neutral-400">Consulta tus pedidos registrados y su estado actual en tienda</p>
               </div>
-              <button onClick={() => setModalMisPedidosAbierto(false)} className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
+              <button onClick={() => setModalMisPedidosAbierto(false)} aria-label="Cerrar historial de compras" className="bg-neutral-100 text-neutral-800 font-bold h-8 w-8 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
             <div className="grow overflow-y-auto">
               {cargandoMisPedidos ? (
-                <p className="text-center py-12 text-sm text-neutral-400 animate-pulse font-medium">Sincronizando tus transacciones con MySQL...</p>
+                <div className="text-center py-12">
+                  <span className="text-3xl block mb-2 animate-pulse" aria-hidden="true">📡</span>
+                  <p className="text-sm text-neutral-400 animate-pulse font-medium">Sincronizando tus transacciones con MySQL...</p>
+                </div>
               ) : misPedidos.length === 0 ? (
-                <div className="text-center py-12 space-y-2">
-                  <p className="text-sm text-neutral-500 font-bold">Aún no has realizado ninguna compra en SneakerHub.</p>
+                <div className="text-center py-12 space-y-1">
+                  <span className="text-3xl block mb-1" aria-hidden="true">🛍️</span>
+                  <p className="text-sm text-neutral-600 font-bold">Aún no has realizado ninguna compra en SneakerHub</p>
                   <p className="text-xs text-neutral-400">¡Arma tu pedido y confírmalo para verlo aquí reflejado!</p>
                 </div>
               ) : (
@@ -899,7 +1049,7 @@ export default function App() {
                 <h3 className="text-base font-black uppercase tracking-tight text-neutral-900">✏️ Editar Ficha de Calzado</h3>
                 <p className="text-[11px] text-neutral-400">Modifica los valores comerciales e inventario maestro del ID #{productoParaEditar.id}</p>
               </div>
-              <button onClick={() => setProductoParaEditar(null)} className="bg-neutral-100 text-neutral-800 font-bold h-7 w-7 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
+              <button onClick={() => setProductoParaEditar(null)} aria-label="Cerrar edición de producto" className="bg-neutral-100 text-neutral-800 font-bold h-7 w-7 rounded-full flex items-center justify-center cursor-pointer text-xs">✕</button>
             </div>
 
             <form onSubmit={handleGuardarEdicionProducto} className="grow overflow-y-auto space-y-4 pr-1">
@@ -946,6 +1096,38 @@ export default function App() {
 
       {modalFormularioAbierto && rol === 'admin' && <FormularioProducto alCerrar={() => setModalFormularioAbierto(false)} onProductoRegistrado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
       {productoParaStock && rol === 'admin' && <ModalEditarStock producto={productoParaStock} alCerrar={() => setProductoParaStock(null)} onStockActualizado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
+
+      {/* 🎨 HU-16 (CA-07): pila de notificaciones tipo toast, no bloqueantes */}
+      {toasts.length > 0 && (
+        <div className="fixed top-4 right-4 z-60 flex flex-col gap-2 w-full max-w-xs" role="status" aria-live="polite">
+          {toasts.map((toast) => {
+            const estilos = {
+              success: 'bg-semantic-success text-white',
+              danger: 'bg-semantic-danger text-white',
+              warning: 'bg-semantic-warning text-white',
+              info: 'bg-neutral-900 text-white',
+            };
+            const iconos = { success: '✅', danger: '⛔', warning: '⚠️', info: 'ℹ️' };
+            return (
+              <div
+                key={toast.id}
+                className={`${estilos[toast.tipo] || estilos.info} rounded-xl shadow-card px-4 py-3 text-xs font-semibold flex items-start gap-2 animate-fade-in-up`}
+              >
+                <span className="shrink-0">{iconos[toast.tipo] || iconos.info}</span>
+                <span className="grow leading-snug">{toast.mensaje}</span>
+                <button
+                  type="button"
+                  onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                  aria-label="Cerrar notificación"
+                  className="shrink-0 opacity-70 hover:opacity-100 cursor-pointer font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* 🛡️ RESPALDO: enlace visible por si un bloqueador impidió abrir WhatsApp automáticamente */}
       {ultimoLinkWhatsApp && (

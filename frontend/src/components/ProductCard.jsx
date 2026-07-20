@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 
-export default function ProductCard({ 
-  producto, 
-  alSeleccionar, 
-  onEditarStock, 
-  onOcultarProducto, 
+export default function ProductCard({
+  producto,
+  alSeleccionar,
+  onEditarStock,
+  onOcultarProducto,
   onActivarProducto,
   onEditarProducto // 🌟 RECIBIDO PARA LA HU-15
 }) {
@@ -13,9 +13,17 @@ export default function ProductCard({
 
   // Cálculo preciso de precios comerciales
   const tieneDescuento = producto.porcentaje_descuento > 0;
-  const precioFinal = tieneDescuento 
+  const precioFinal = tieneDescuento
     ? (producto.precio_base * (1 - producto.porcentaje_descuento / 100)).toFixed(2)
     : parseFloat(producto.precio_base).toFixed(2);
+
+  // 🎨 HU-16 (CA-03): fade-in de imagen y aviso de últimas unidades
+  const [imagenCargada, setImagenCargada] = useState(false);
+  const stockTotal = (producto.variantes_color || []).reduce(
+    (sum, v) => sum + (v.tallares_stock || []).reduce((s, t) => s + (t.stock || 0), 0),
+    0
+  );
+  const stockBajo = stockTotal > 0 && stockTotal <= 5;
 
   return (
     <div className="bg-white border border-neutral-200/70 rounded-2xl overflow-hidden shadow-soft hover:shadow-card hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group relative">
@@ -27,16 +35,24 @@ export default function ProductCard({
         </span>
       )}
 
+      {/* Aviso de últimas unidades disponibles */}
+      {stockBajo && (
+        <span className="absolute top-3 right-3 bg-semantic-warning text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md z-10 tracking-wider shadow-2xs">
+          🔥 Últimas unidades
+        </span>
+      )}
+
       {/* Contenedor de Imagen de Producto */}
-      <div 
-        onClick={() => alSeleccionar(producto)} 
+      <div
+        onClick={() => alSeleccionar(producto)}
         className="aspect-square bg-neutral-50/70 p-6 flex items-center justify-center cursor-pointer overflow-hidden relative"
       >
         {imagenPrincipal ? (
-          <img 
-            src={imagenPrincipal} 
-            alt={producto.nombre} 
-            className="max-h-40 object-contain group-hover:scale-105 transition-transform duration-300"
+          <img
+            src={imagenPrincipal}
+            alt={producto.nombre}
+            onLoad={() => setImagenCargada(true)}
+            className={`max-h-40 object-contain group-hover:scale-105 transition-all duration-300 ${imagenCargada ? 'opacity-100' : 'opacity-0'}`}
           />
         ) : (
           <div className="text-neutral-300 font-mono text-[10px] uppercase font-bold">Sin foto de vitrina</div>
@@ -121,6 +137,27 @@ export default function ProductCard({
         )}
       </div>
 
+    </div>
+  );
+}
+
+// 🎨 HU-16 (CA-03/CA-06): skeleton reutilizable con el mismo layout de ProductCard,
+// usado mientras el catálogo está cargando en vez de un texto centrado suelto.
+export function ProductCardSkeleton() {
+  return (
+    <div
+      className="bg-white border border-neutral-200/70 rounded-2xl overflow-hidden shadow-soft flex flex-col justify-between animate-pulse"
+      aria-hidden="true"
+    >
+      <div className="aspect-square bg-neutral-100" />
+      <div className="p-4 grow flex flex-col gap-3">
+        <div className="space-y-2">
+          <div className="h-2.5 w-1/2 bg-neutral-100 rounded-full" />
+          <div className="h-3.5 w-3/4 bg-neutral-100 rounded-full" />
+          <div className="h-4 w-1/3 bg-neutral-100 rounded-full" />
+        </div>
+        <div className="h-9 w-full bg-neutral-100 rounded-xl mt-1" />
+      </div>
     </div>
   );
 }
