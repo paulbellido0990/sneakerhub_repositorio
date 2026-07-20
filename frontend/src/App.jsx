@@ -66,6 +66,8 @@ export default function App() {
     return datosLocales ? JSON.parse(datosLocales) : [];
   });
   const [menuCarritoAbierto, setMenuCarritoAbierto] = useState(false);
+  // 🛡️ Enlace de respaldo por si un bloqueador impide el clic automático a WhatsApp
+  const [ultimoLinkWhatsApp, setUltimoLinkWhatsApp] = useState(null);
 
   useEffect(() => {
     localStorage.setItem('sneakerhub_cart', JSON.stringify(carrito));
@@ -292,7 +294,21 @@ export default function App() {
     ].join("\n");
 
     const urlWhatsApp = `https://wa.me/${CELULAR_TIENDA}?text=${encodeURIComponent(mensaje)}`;
-    window.open(urlWhatsApp, '_blank');
+
+    // 🛡️ FIX: Se simula un clic real sobre un <a> en vez de usar window.open().
+    // La mayoría de adblockers interceptan la API window.open(), pero no un clic
+    // genuino sobre un enlace real (el mismo patrón que usan los botones oficiales
+    // de "clic para chatear" de WhatsApp Business en otros sitios).
+    const enlaceWhatsApp = document.createElement('a');
+    enlaceWhatsApp.href = urlWhatsApp;
+    enlaceWhatsApp.target = '_blank';
+    enlaceWhatsApp.rel = 'noopener noreferrer';
+    document.body.appendChild(enlaceWhatsApp);
+    enlaceWhatsApp.click();
+    document.body.removeChild(enlaceWhatsApp);
+
+    // Se guarda como respaldo visible por si algún bloqueador aún así impidió el clic
+    setUltimoLinkWhatsApp(urlWhatsApp);
 
     setCarrito([]);
     setCodigoPago('');
@@ -936,6 +952,33 @@ export default function App() {
 
       {modalFormularioAbierto && rol === 'admin' && <FormularioProducto alCerrar={() => setModalFormularioAbierto(false)} onProductoRegistrado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
       {productoParaStock && rol === 'admin' && <ModalEditarStock producto={productoParaStock} alCerrar={() => setProductoParaStock(null)} onStockActualizado={() => { setBusqueda(prev => prev + ' '); setTimeout(() => setBusqueda(prev => prev.trim()), 50); }} />}
+
+      {/* 🛡️ RESPALDO: enlace visible por si un bloqueador impidió abrir WhatsApp automáticamente */}
+      {ultimoLinkWhatsApp && (
+        <div className="fixed bottom-4 right-4 z-50 bg-neutral-900 text-white rounded-2xl shadow-2xl p-4 max-w-xs animate-in slide-in-from-bottom-4 fade-in duration-200 flex items-start gap-3">
+          <span className="text-xl leading-none">💬</span>
+          <div className="flex-1">
+            <p className="text-xs font-bold">¿No se abrió WhatsApp?</p>
+            <p className="text-[11px] text-neutral-400 mt-0.5">Puede que tu navegador lo haya bloqueado.</p>
+            <a
+              href={ultimoLinkWhatsApp}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setUltimoLinkWhatsApp(null)}
+              className="inline-block mt-2 bg-green-600 hover:bg-green-700 text-white text-[11px] font-black uppercase px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Abrir manualmente →
+            </a>
+          </div>
+          <button
+            type="button"
+            onClick={() => setUltimoLinkWhatsApp(null)}
+            className="text-neutral-400 hover:text-white text-xs font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
     </div>
   );
